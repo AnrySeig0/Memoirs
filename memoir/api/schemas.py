@@ -45,6 +45,20 @@ class FlagRequest(_ActorBody):
     )
 
 
+class SupersedeRequest(_ActorBody):
+    new_claim_id: uuid.UUID = Field(
+        description=(
+            "The new claim that carries the corrected statement. Must be a "
+            "live claim (not itself superseded) and not already the "
+            "successor of another claim (many-to-one is a merge, M5)."
+        ),
+    )
+    note: str | None = Field(
+        default=None,
+        description="Optional editor note, stored in the audit payload.",
+    )
+
+
 class UtteranceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -83,3 +97,16 @@ class ReviewLogOut(BaseModel):
     payload: dict[str, Any] | None
     actor: str
     created_at: datetime
+
+
+class ClaimHistoryEntry(BaseModel):
+    """One link in a correction chain — the §6 "đã nói gì → sửa thành gì → khi nào".
+
+    Returned in chronological order by `GET /claims/{id}/history`. For the
+    leaf (still-current claim) the `superseded_*` fields are null.
+    """
+
+    claim: ClaimOut
+    superseded_at: datetime | None
+    superseded_by_actor: str | None
+    note: str | None

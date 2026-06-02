@@ -131,9 +131,36 @@ def test_missing_actor_rejected_by_pydantic(api_client, db_session) -> None:
 
 
 def test_edit_on_superseded_returns_422(api_client, db_session) -> None:
-    _, claim_id, _ = _seed(db_session, status="superseded")
+    """A superseded claim must be reached via a real supersede chain
+    (M4 invariant CHECK). Build the chain via API, then try to edit
+    the historic claim.
+    """
+    subject_id, old_id, _ = _seed(db_session)
+    # Create a successor and supersede via HTTP — exercises the same
+    # surface the editor would use.
+    second = ingest_text_transcript(
+        db_session,
+        subject_id=subject_id,
+        session_no=2,
+        turns=[Turn("subject", "Năm 1963 mới đúng.")],
+        storage_uri="s3://memoir/test/m3_edit_super_api.txt",
+    )
+    new_claim = insert_claim_with_sources(
+        db_session,
+        subject_id=subject_id,
+        text="Subject moved in 1963.",
+        claim_type="event",
+        confidence=0.7,
+        source_utterance_ids=list(second.utterance_ids),
+    )
+    db_session.commit()
+    api_client.post(
+        f"/claims/{old_id}/supersede",
+        json={"actor": "alice", "new_claim_id": str(new_claim.id)},
+    )
+
     r = api_client.post(
-        f"/claims/{claim_id}/edit",
+        f"/claims/{old_id}/edit",
         json={"actor": "alice", "text": "trying to rewrite history"},
     )
     assert r.status_code == 422

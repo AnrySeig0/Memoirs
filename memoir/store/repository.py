@@ -11,9 +11,11 @@ transaction by a single function.
 """
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
 from memoir.store.models import Claim, ClaimSource, ReviewLog
@@ -294,3 +296,176 @@ def flag_claim(
         payload=payload,
     )
     return claim
+
+
+# ---------------------------------------------------------------------------
+# M4: correction / supersede
+# ---------------------------------------------------------------------------
+#
+# §6 flow: when the subject says in a later session "actually it was '62,
+# not '61", we DO NOT overwrite the old claim. Instead we mark it
+# superseded and link it to the new claim that carries the corrected
+# statement. The old text stays exactly as it was — drift becomes visible
+# rather than vanishing.
+#
+# Invariants enforced here:
+# - old.id != new.id (no self-supersede)
+# - old.subject_id == new.subject_id (no cross-subject corrections)
+# - old.status != 'superseded' (must supersede the leaf, not a historic node)
+# - new.status != 'superseded' (the corrector itself must be live)
+# - new is not already the successor of some other claim (1:1 supersede;
+#   many-to-one is "merge", which is M5's concern)
+#
+# old.text is never touched. The only fields mutated on old are status,
+# superseded_by, reviewed_at, reviewed_by. A single `review_log` row with
+# action='supersede' records who confirmed the correction and when.
+
+
+@dataclass(frozen=True, slots=True)
+class HistoryEntry:
+    """One link in a claim's correction chain.
+
+    `superseded_at` / `superseded_by_actor` / `note` come from the
+    `review_log` row that marked this claim's transition to superseded.
+    They are `None` for the leaf — the still-current claim hasn't been
+    superseded by anything yet.
+    """
+
+    claim: "Claim"
+    superseded_at: datetime | None
+    superseded_by_actor: str | None
+    note: str | None
+
+
+def supersede_claim(
+    db: OrmSession,
+    *,
+    old_id: uuid.UUID,
+    new_id: uuid.UUID,
+    actor: str,
+    note: str | None = None,
+) -> Claim:
+    """Mark `old_id` as superseded by `new_id`. Returns the updated old claim.
+
+    Raises:
+        ClaimNotFound: if either id does not resolve.
+        ValueError: if a supersede invariant is violated. The API layer
+            should translate this into 422.
+    """
+    if not actor or not actor.strip():
+        raise ValueError("actor must not be empty")
+    if old_id == new_id:
+        raise ValueError("cannot supersede a claim with itself")
+
+    old = _load_claim_or_raise(db, old_id)
+    new = _load_claim_or_raise(db, new_id)
+
+    if old.subject_id != new.subject_id:
+        raise ValueError(
+            "cannot supersede across subjects — old and new claims belong "
+            "to different subjects"
+        )
+    if old.status == "superseded":
+        raise ValueError(
+            f"claim {old_id} is already superseded — supersede the leaf of "
+            "its chain instead (use claim_history to find it)"
+        )
+    if new.status == "superseded":
+        raise ValueError(
+            f"new claim {new_id} is itself superseded — pick a live "
+            "successor"
+        )
+
+    # 1:1 supersede invariant: the new claim must not already be the
+    # target of some other supersede. Many-to-one (merge) is M5.
+    existing_predecessor = db.execute(
+        select(Claim.id).where(Claim.superseded_by == new.id)
+    ).scalar_one_or_none()
+    if existing_predecessor is not None:
+        raise ValueError(
+            f"new claim {new_id} is already the successor of claim "
+            f"{existing_predecessor} — many-to-one supersede is a merge "
+            "operation and belongs to M5"
+        )
+
+    # Bind successor BEFORE _record_review sets status='superseded',
+    # because the DB CHECK enforces "(status='superseded') = (superseded_by
+    # IS NOT NULL)" and SQLAlchemy may emit a single UPDATE for both.
+    old.superseded_by = new.id
+    payload: dict[str, Any] = {"new_claim_id": str(new.id)}
+    if note is not None:
+        payload["note"] = note
+
+    old, _ = _record_review(
+        db,
+        claim=old,
+        actor=actor,
+        action="supersede",
+        new_status="superseded",
+        payload=payload,
+    )
+    return old
+
+
+def claim_history(db: OrmSession, *, claim_id: uuid.UUID) -> list[HistoryEntry]:
+    """Return the full correction chain that contains `claim_id`.
+
+    Order is chronological: root (first thing said) at index 0, leaf
+    (still-current claim) at the end. Each non-leaf entry carries the
+    timestamp + actor + note of the `supersede` action that closed it.
+    """
+    target = _load_claim_or_raise(db, claim_id)
+
+    # Walk backward to root via repeated "who points at me as successor?"
+    # lookups. With ix_claims_superseded_by this is cheap.
+    current = target
+    visited: set[uuid.UUID] = {current.id}
+    while True:
+        prev = db.execute(
+            select(Claim).where(Claim.superseded_by == current.id)
+        ).scalar_one_or_none()
+        if prev is None:
+            break
+        if prev.id in visited:
+            # Defensive — a cycle should be impossible given our
+            # invariants, but better to break than loop forever.
+            break
+        visited.add(prev.id)
+        current = prev
+
+    # Now `current` is the root; walk forward via superseded_by.
+    chain: list[Claim] = [current]
+    visited = {current.id}
+    while chain[-1].superseded_by is not None:
+        nxt = db.get(Claim, chain[-1].superseded_by)
+        if nxt is None or nxt.id in visited:
+            break
+        visited.add(nxt.id)
+        chain.append(nxt)
+
+    # Look up the supersede audit row per non-leaf link.
+    supersede_logs = db.execute(
+        select(ReviewLog).where(
+            ReviewLog.claim_id.in_([c.id for c in chain[:-1]]),
+            ReviewLog.action == "supersede",
+        )
+    ).scalars().all()
+    by_claim: dict[uuid.UUID, ReviewLog] = {
+        log.claim_id: log for log in supersede_logs
+    }
+
+    entries: list[HistoryEntry] = []
+    for idx, claim in enumerate(chain):
+        if idx == len(chain) - 1:
+            entries.append(HistoryEntry(claim=claim, superseded_at=None, superseded_by_actor=None, note=None))
+        else:
+            log = by_claim.get(claim.id)
+            entries.append(
+                HistoryEntry(
+                    claim=claim,
+                    superseded_at=log.created_at if log else None,
+                    superseded_by_actor=log.actor if log else None,
+                    note=(log.payload or {}).get("note") if log else None,
+                )
+            )
+    return entries

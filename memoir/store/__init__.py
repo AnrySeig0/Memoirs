@@ -27,7 +27,9 @@ from memoir.store.repository import (
     VALID_CLAIM_STATUSES,
     VALID_REVIEW_ACTIONS,
     ClaimNotFound,
+    HistoryEntry,
     accept_claim,
+    claim_history,
     edit_claim,
     flag_claim,
     insert_claim_with_sources,
@@ -35,6 +37,7 @@ from memoir.store.repository import (
     insert_source,
     insert_utterance,
     reject_claim,
+    supersede_claim,
 )
 
 __all__ = [
@@ -42,6 +45,7 @@ __all__ = [
     "Claim",
     "ClaimNotFound",
     "ClaimSource",
+    "HistoryEntry",
     "ReviewLog",
     "Session",
     "Source",
@@ -49,6 +53,7 @@ __all__ = [
     "VALID_CLAIM_STATUSES",
     "VALID_REVIEW_ACTIONS",
     "accept_claim",
+    "claim_history",
     "edit_claim",
     "flag_claim",
     "get_engine",
@@ -58,4 +63,5 @@ __all__ = [
     "insert_utterance",
     "reject_claim",
     "session_scope",
+    "supersede_claim",
 ]

@@ -149,16 +149,44 @@ def test_missing_claim_raises_not_found(db_session) -> None:
 
 
 def test_edit_on_superseded_refused(db_session) -> None:
-    _, claim_id = _seed_claim(db_session, status="superseded")
+    """A superseded claim must reach that state via a real supersede chain
+    (M4 invariant CHECK forbids the shortcut of inserting with
+    status='superseded' but superseded_by NULL). Set up the chain then
+    confirm `edit` on the historic claim is refused.
+    """
+    from memoir.store import supersede_claim
+
+    subject_id, old_id = _seed_claim(db_session)
+    # A second claim to serve as the successor.
+    ingest = ingest_text_transcript(
+        db_session,
+        subject_id=subject_id,
+        session_no=2,
+        turns=[Turn("subject", "Thực ra năm 1963.")],
+        storage_uri="s3://memoir/test/m3_edit_super_new.txt",
+    )
+    new_claim = insert_claim_with_sources(
+        db_session,
+        subject_id=subject_id,
+        text="Subject moved to Detroit in 1963.",
+        claim_type="event",
+        confidence=0.7,
+        source_utterance_ids=list(ingest.utterance_ids),
+    )
+    db_session.commit()
+    supersede_claim(db_session, old_id=old_id, new_id=new_claim.id, actor="alice")
+    db_session.commit()
+
     with pytest.raises(ValueError, match="superseded"):
         edit_claim(
             db_session,
-            claim_id=claim_id,
+            claim_id=old_id,
             actor="alice",
             new_text="trying to mutate history",
         )
-    # The audit log stays empty — the refusal happens before any write.
-    assert _logs_for(db_session, claim_id) == []
+    # The supersede audit row is there, but the refused edit added nothing.
+    logs = _logs_for(db_session, old_id)
+    assert [log.action for log in logs] == ["supersede"]
 
 
 def test_empty_actor_refused(db_session) -> None:

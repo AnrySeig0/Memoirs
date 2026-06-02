@@ -16,11 +16,13 @@ from sqlalchemy.orm import Session as OrmSession
 from memoir.api.deps import get_db
 from memoir.api.schemas import (
     AcceptRequest,
+    ClaimHistoryEntry,
     ClaimOut,
     EditRequest,
     FlagRequest,
     RejectRequest,
     ReviewLogOut,
+    SupersedeRequest,
     UtteranceOut,
 )
 from memoir.store import (
@@ -31,9 +33,11 @@ from memoir.store import (
     ReviewLog,
     Utterance,
     accept_claim,
+    claim_history,
     edit_claim,
     flag_claim,
     reject_claim,
+    supersede_claim,
 )
 
 router = APIRouter(prefix="/claims", tags=["claims"])
@@ -182,3 +186,58 @@ def get_review_log(
         .all()
     )
     return [ReviewLogOut.model_validate(r) for r in rows]
+
+
+@router.post("/{claim_id}/supersede", response_model=ClaimOut)
+def post_supersede(
+    claim_id: uuid.UUID,
+    body: SupersedeRequest,
+    db: Annotated[OrmSession, Depends(get_db)],
+) -> ClaimOut:
+    """Mark `claim_id` (the old claim) as superseded by `body.new_claim_id`.
+
+    §6 correction flow: the old claim's text stays untouched; only its
+    status, `superseded_by`, and review metadata move. The audit log
+    captures who confirmed the correction and when.
+    """
+    try:
+        old_claim = supersede_claim(
+            db,
+            old_id=claim_id,
+            new_id=body.new_claim_id,
+            actor=body.actor,
+            note=body.note,
+        )
+    except ClaimNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="claim not found")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        )
+    return _serialize(db, old_claim)
+
+
+@router.get("/{claim_id}/history", response_model=list[ClaimHistoryEntry])
+def get_claim_history(
+    claim_id: uuid.UUID,
+    db: Annotated[OrmSession, Depends(get_db)],
+) -> list[ClaimHistoryEntry]:
+    """Return the full correction chain that contains `claim_id`.
+
+    Order is chronological (root → leaf). Each non-leaf entry includes
+    the timestamp / actor / note from the supersede audit row that
+    closed it — the §6 "đã nói gì → sửa thành gì → khi nào" trail.
+    """
+    try:
+        entries = claim_history(db, claim_id=claim_id)
+    except ClaimNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="claim not found")
+    return [
+        ClaimHistoryEntry(
+            claim=_serialize(db, entry.claim),
+            superseded_at=entry.superseded_at,
+            superseded_by_actor=entry.superseded_by_actor,
+            note=entry.note,
+        )
+        for entry in entries
+    ]

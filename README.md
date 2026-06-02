@@ -198,9 +198,30 @@ Khi nhân vật ở phiên 4 nói "thực ra là năm '62, không phải '61":
 | M1 | Substrate + provenance (Step 1–2) | Transcript vào DB append-only, mọi utterance có offset/speaker | **DONE** |
 | M2 | Extraction có grounding (Step 3–4) | Mọi claim có ≥1 `claim_sources`; claim không nguồn bị loại/flag | **DONE** |
 | M3 | **Review UI** (Step 7) | Editor accept/reject/edit/flag được; có audit log | **DONE** |
-| M4 | Correction / supersede | Pass Correction test | TODO |
+| M4 | Correction / supersede | Pass Correction test | **DONE** |
 | M5 | Embedding + dedup + entity (Step 5–6) | Gợi ý merge hiển thị; merge cần xác nhận; pass Merge safety test | TODO |
 | M6 | Provenance test toàn hệ | 100 claim ngẫu nhiên truy vết đúng = 100% | TODO |
+
+### M4 — đã giao những gì
+
+- Alembic migration `0004_m4_supersede` — partial index `ix_claims_superseded_by WHERE superseded_by IS NOT NULL` cho backward walk + CHECK `(status='superseded') = (superseded_by IS NOT NULL)` ghép cặp 2 cột ở DB layer. Mọi code path nào set 1 mà thiếu cái còn lại → reject.
+- `memoir.store.supersede_claim(old_id, new_id, actor, note?)` — 1 transaction:
+  - Validate 7 invariants: actor non-empty, không self-supersede, cùng `subject_id`, `old` chưa từng superseded (phải supersede leaf), `new` không phải đang superseded, `new` chưa là successor của ai khác (1:1; many-to-one là merge → M5), old/new tồn tại.
+  - Set `old.status='superseded'`, `old.superseded_by=new.id`, `reviewed_at/reviewed_by`. **Không đụng `old.text`** — §6 hard rule.
+  - Ghi `review_log action='supersede'`, payload `{new_claim_id, note?}`.
+- `memoir.store.claim_history(claim_id)` — walk backward về root + forward đến leaf, trả về chain `HistoryEntry(claim, superseded_at, superseded_by_actor, note)`. Cycle defensive break. Mỗi non-leaf link kèm audit timestamp từ `review_log`.
+- `memoir.api`:
+  - `POST /claims/{old_id}/supersede` — body `{actor, new_claim_id, note?}` → updated old claim. 404 nếu thiếu, 422 nếu vi phạm invariant.
+  - `GET /claims/{id}/history` → list `ClaimHistoryEntry` theo thứ tự thời gian. §6 "đã nói gì → sửa thành gì → khi nào" trên 1 endpoint.
+- Tests:
+  - `tests/test_correction.py` — §1 Correction test acceptance: old vẫn tồn tại, text bất biến, status='superseded', history kể đủ chuỗi với timestamp + actor + note.
+  - `tests/test_supersede_repository.py` (11 cases) — happy + 7 refusal invariants + chain C1→C2→C3 + DB CHECK chặn manual drift.
+  - `tests/test_api_supersede.py` (8 cases) — HTTP happy, 404, 422 self-supersede, 422 Pydantic missing actor, history endpoint, audit visible in `/log`.
+  - 2 existing tests (`test_edit_on_superseded_*` ở M3) cập nhật để dùng supersede chain thật thay vì shortcut insert (M4 CHECK invariant không cho shortcut nữa — đó chính xác là việc nó làm).
+
+Cố ý KHÔNG nằm trong M4:
+- Many-to-one supersede (1 new ← nhiều old) — đó là merge, M5.
+- Auto-detect correction từ extraction — §9 "không tự giải quyết gì"; editor luôn xác nhận.
 
 ### M3 — đã giao những gì
 
