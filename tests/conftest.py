@@ -68,7 +68,12 @@ def db_session(engine: Engine) -> Iterator[Session]:
         # between tests. The append-only invariant we test is about
         # row-level UPDATE/DELETE from application code, not destructive
         # operator action.
-        conn.execute(text("TRUNCATE utterances, sessions, sources RESTART IDENTITY CASCADE"))
+        conn.execute(
+            text(
+                "TRUNCATE claim_sources, claims, utterances, sessions, sources "
+                "RESTART IDENTITY CASCADE"
+            )
+        )
     session = factory()
     try:
         yield session

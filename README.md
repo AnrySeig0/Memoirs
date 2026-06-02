@@ -196,11 +196,22 @@ Khi nhân vật ở phiên 4 nói "thực ra là năm '62, không phải '61":
 | Mốc | Nội dung | Tiêu chí hoàn thành | Trạng thái |
 |-----|----------|---------------------|------------|
 | M1 | Substrate + provenance (Step 1–2) | Transcript vào DB append-only, mọi utterance có offset/speaker | **DONE** |
-| M2 | Extraction có grounding (Step 3–4) | Mọi claim có ≥1 `claim_sources`; claim không nguồn bị loại/flag | TODO |
+| M2 | Extraction có grounding (Step 3–4) | Mọi claim có ≥1 `claim_sources`; claim không nguồn bị loại/flag | **DONE** |
 | M3 | **Review UI** (Step 7) | Editor accept/reject/edit/flag được; có audit log | TODO |
 | M4 | Correction / supersede | Pass Correction test | TODO |
 | M5 | Embedding + dedup + entity (Step 5–6) | Gợi ý merge hiển thị; merge cần xác nhận; pass Merge safety test | TODO |
 | M6 | Provenance test toàn hệ | 100 claim ngẫu nhiên truy vết đúng = 100% | TODO |
+
+### M2 — đã giao những gì
+
+- Alembic migration `0002_m2_claims` — bảng `claims` + `claim_sources` (§4 schema, trừ `embedding`/entities để dành M5). CHECK `confidence BETWEEN 0 AND 1`, CHECK `status` trong tập 6 giá trị, CHECK `superseded_by <> id`. Postgres trigger chặn UPDATE/DELETE trên `claim_sources` — provenance một khi đã xác lập không được viết đè.
+- `memoir.extract.ExtractedClaim` (Pydantic) — `source_utterance_ids: list[UUID] = Field(min_length=1)`, `confidence` clamp `[0,1]`. Mọi extractor (rule/LLM/future) phải đi qua schema này; output không nguồn bị reject ở validation layer.
+- `memoir.store.insert_claim_with_sources` — viết claim + claim_sources trong 1 transaction; gọi với `source_utterance_ids=[]` raise `ValueError` trước khi chạm DB. Dedup trùng utterance id, validate status/confidence.
+- `memoir.segment.segment_by_utterance` — Step 3 identity segmentation (1 utterance = 1 segment), giữ nguyên offset. Glue policy `segment_by_turn_window(max_chars)` là next step nhưng không thay đổi contract M2.
+- `memoir.extract.RuleExtractor` — year-detector deterministic (regex `\b(?:19|20)\d{2}\b`), confidence 0.5; làm baseline + dùng cho tests không cần LLM. `LLMExtractor` stub đầy đủ docstring chỉ rõ shape Instructor/vLLM cho follow-up.
+- Tests: `test_extraction.py` (7 cases — Pydantic, RuleExtractor Vietnamese, protocol structural match), `test_claim_repository.py` (6 cases — repo reject empty / confidence / status, atomic insert, dedup, trigger), `test_grounded_pipeline.py` (e2e ingest → segment → extract → store + assert orphan claims = 0).
+
+LLM integration (Outlines/Instructor + Qwen/Llama qua vLLM) **không nằm trong M2** — acceptance là grounding contract, không phải chất lượng văn xuôi. `LLMExtractor.extract()` raise `NotImplementedError` để rõ surface; là follow-up PR độc lập.
 
 ### M1 — đã giao những gì
 
