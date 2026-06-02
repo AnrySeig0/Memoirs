@@ -20,11 +20,14 @@ from memoir.api.schemas import (
     ClaimOut,
     EditRequest,
     FlagRequest,
+    MergeCandidateOut,
+    MergeRequest,
     RejectRequest,
     ReviewLogOut,
     SupersedeRequest,
     UtteranceOut,
 )
+from memoir.resolve import DEFAULT_THRESHOLD, find_merge_candidates
 from memoir.store import (
     VALID_CLAIM_STATUSES,
     Claim,
@@ -36,6 +39,7 @@ from memoir.store import (
     claim_history,
     edit_claim,
     flag_claim,
+    merge_claim,
     reject_claim,
     supersede_claim,
 )
@@ -82,6 +86,37 @@ def _resolve_action(action_callable, db: OrmSession, claim_id: uuid.UUID, **kwar
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         )
     return _serialize(db, claim)
+
+
+@router.get("/dedup-candidates", response_model=list[MergeCandidateOut])
+def get_dedup_candidates(
+    db: Annotated[OrmSession, Depends(get_db)],
+    subject_id: Annotated[uuid.UUID, Query(description="Required — dedup is scoped per subject.")],
+    threshold: Annotated[
+        float, Query(ge=-1.0, le=1.0, description="Minimum cosine similarity to surface.")
+    ] = DEFAULT_THRESHOLD,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+) -> list[MergeCandidateOut]:
+    """Surface merge candidates for `subject_id`. **Read-only.**
+
+    §1 Merge safety rule: this endpoint NEVER commits a merge. It
+    returns pairs; the editor decides via `POST /claims/{loser}/merge`.
+
+    Declared BEFORE `GET /claims/{claim_id}` so FastAPI matches the
+    literal path first — otherwise `dedup-candidates` would be parsed
+    as a UUID-shaped claim_id and 422 out.
+    """
+    pairs = find_merge_candidates(
+        db, subject_id=subject_id, threshold=threshold, limit=limit
+    )
+    return [
+        MergeCandidateOut(
+            claim_a_id=p.claim_a_id,
+            claim_b_id=p.claim_b_id,
+            similarity=p.similarity,
+        )
+        for p in pairs
+    ]
 
 
 @router.get("", response_model=list[ClaimOut])
@@ -186,6 +221,38 @@ def get_review_log(
         .all()
     )
     return [ReviewLogOut.model_validate(r) for r in rows]
+
+
+@router.post("/{claim_id}/merge", response_model=ClaimOut)
+def post_merge(
+    claim_id: uuid.UUID,
+    body: MergeRequest,
+    db: Annotated[OrmSession, Depends(get_db)],
+) -> ClaimOut:
+    """Editor-confirmed merge: `claim_id` (the loser) is folded into
+    `body.winner_claim_id`. The loser becomes superseded; its text is
+    untouched. The audit log gets one `merge` row with similarity in
+    payload.
+
+    §1 Merge safety: this is the ONLY path that commits a merge.
+    `GET /claims/dedup-candidates` only surfaces; the human picks here.
+    """
+    try:
+        loser = merge_claim(
+            db,
+            loser_id=claim_id,
+            winner_id=body.winner_claim_id,
+            actor=body.actor,
+            similarity=body.similarity,
+            note=body.note,
+        )
+    except ClaimNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="claim not found")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        )
+    return _serialize(db, loser)
 
 
 @router.post("/{claim_id}/supersede", response_model=ClaimOut)

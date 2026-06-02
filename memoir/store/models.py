@@ -2,9 +2,12 @@ import uuid
 from datetime import datetime
 
 import sqlalchemy as sa
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import REAL, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+EMBEDDING_DIM = 1024
 
 
 class Base(DeclarativeBase):
@@ -72,6 +75,12 @@ class Claim(Base):
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     reviewed_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Nullable: claims start unembedded. The dedup query filters
+    # `embedding IS NOT NULL` so unembedded claims simply don't appear
+    # in merge candidates.
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(EMBEDDING_DIM), nullable=True
+    )
 
 
 class ClaimSource(Base):
@@ -82,6 +91,29 @@ class ClaimSource(Base):
     )
     utterance_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("utterances.id"), primary_key=True
+    )
+
+
+class Entity(Base):
+    __tablename__ = "entities"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    subject_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    canonical: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")
+    )
+
+
+class ClaimEntity(Base):
+    __tablename__ = "claim_entities"
+
+    claim_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("claims.id"), primary_key=True
+    )
+    entity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("entities.id"), primary_key=True
     )
 
 

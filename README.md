@@ -199,8 +199,34 @@ Khi nhân vật ở phiên 4 nói "thực ra là năm '62, không phải '61":
 | M2 | Extraction có grounding (Step 3–4) | Mọi claim có ≥1 `claim_sources`; claim không nguồn bị loại/flag | **DONE** |
 | M3 | **Review UI** (Step 7) | Editor accept/reject/edit/flag được; có audit log | **DONE** |
 | M4 | Correction / supersede | Pass Correction test | **DONE** |
-| M5 | Embedding + dedup + entity (Step 5–6) | Gợi ý merge hiển thị; merge cần xác nhận; pass Merge safety test | TODO |
+| M5 | Embedding + dedup + entity (Step 5–6) | Gợi ý merge hiển thị; merge cần xác nhận; pass Merge safety test | **DONE** |
 | M6 | Provenance test toàn hệ | 100 claim ngẫu nhiên truy vết đúng = 100% | TODO |
+
+### M5 — đã giao những gì
+
+- Alembic migration `0005_m5_embedding_entities` — `CREATE EXTENSION vector`; `claims.embedding VECTOR(1024)` nullable (BGE-m3 dim); bảng `entities`, `claim_entities`; UNIQUE `(subject_id, kind, canonical)` cho `get_or_create_entity`. **Không** tạo IVFFlat/HNSW index ở V1 — §9 không phức tạp hóa sớm.
+- `memoir/resolve/`:
+  - `Embedder` protocol runtime-checkable + `DeterministicEmbedder` (hash-based, L2-normalized, identical text → identical vector — dùng cho tests/baseline) + `BGEEmbedder` (lazy import sentence-transformers, raise nếu thiếu `ml` extras).
+  - `find_merge_candidates(db, subject_id, threshold, limit)` — pgvector cosine query `<=>`, **read-only**, scoped per subject, exclude superseded + unembedded.
+  - `RuleEntityLinker` — year regex + capitalized tokens (Unicode-aware cho dấu tiếng Việt). `EntityLinker` protocol cho future spaCy/underthesea.
+- `memoir/store/`:
+  - `set_claim_embedding`, `get_or_create_entity` (idempotent), `link_claim_to_entities` (idempotent).
+  - `merge_claim(loser, winner, actor, similarity?, note?)` — many-to-one supersede variant: same mechanical update như M4 (loser status='superseded', superseded_by=winner.id, **text untouched**) nhưng **relax invariant 1:1** (M4 strict, M5 cho phép nhiều losers chung 1 winner). Audit `action='merge'`, payload có `similarity`.
+- `memoir/api`:
+  - `GET /claims/dedup-candidates?subject_id=&threshold=&limit=` — declared TRƯỚC `/claims/{claim_id}` để FastAPI không parse "dedup-candidates" là UUID. Read-only.
+  - `POST /claims/{loser_id}/merge` — body `{actor, winner_claim_id, similarity?, note?}`. Path duy nhất commit merge.
+- Tests (102 active pass + 1 conditional skip):
+  - `test_embedder.py` (5) — dim, L2-normalized, identical→identical, different→orthogonal, protocol.
+  - `test_entity.py` (8) — RuleEntityLinker năm/proper noun/diacritics/dedup; get_or_create idempotent per-subject; link_claim_to_entities idempotent.
+  - `test_dedup.py` (6) — identical surface, unrelated suppressed, superseded excluded, unembedded excluded, per-subject scope, threshold validation.
+  - `test_merge_repository.py` (11) — happy + many-to-one + tất cả refusal invariants + sanity check rằng M4 supersede vẫn strict 1:1 sau M5.
+  - `test_api_dedup.py` (7) — HTTP happy, route ordering, threshold 422, merge supersedes loser, self-merge 422, 404 missing, round-trip surface→merge→candidate-disappears.
+  - **`test_merge_safety.py`** — §1 Merge safety acceptance gate: 5 trùng lặp, snapshot trước/sau `find_merge_candidates`, assert 0 row change ở mọi count (`claims_*`, `review_log_*`); rồi 1 explicit `merge_claim` → đúng 1 row flip + đúng 1 audit row + 3 trùng còn lại không bị động vào.
+
+Cố ý KHÔNG nằm trong M5:
+- IVFFlat/HNSW index — perf-tuning follow-up khi data lớn hơn.
+- BGE-m3/spaCy wire-up thật — surface ready ở `BGEEmbedder` + `EntityLinker` protocol; install qua `uv sync --extra ml` khi cần.
+- Auto-suggest merge type từ entity overlap — §9 "không tự giải quyết gì".
 
 ### M4 — đã giao những gì
 

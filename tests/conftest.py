@@ -70,8 +70,9 @@ def db_session(engine: Engine) -> Iterator[Session]:
         # operator action.
         conn.execute(
             text(
-                "TRUNCATE review_log, claim_sources, claims, utterances, "
-                "sessions, sources RESTART IDENTITY CASCADE"
+                "TRUNCATE review_log, claim_entities, claim_sources, "
+                "entities, claims, utterances, sessions, sources "
+                "RESTART IDENTITY CASCADE"
             )
         )
     session = factory()

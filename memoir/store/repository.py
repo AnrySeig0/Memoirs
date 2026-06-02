@@ -18,7 +18,14 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from memoir.store.models import Claim, ClaimSource, ReviewLog
+from memoir.store.models import (
+    EMBEDDING_DIM,
+    Claim,
+    ClaimEntity,
+    ClaimSource,
+    Entity,
+    ReviewLog,
+)
 from memoir.store.models import Session as SessionRow
 from memoir.store.models import Source, Utterance
 
@@ -469,3 +476,178 @@ def claim_history(db: OrmSession, *, claim_id: uuid.UUID) -> list[HistoryEntry]:
                 )
             )
     return entries
+
+
+# ---------------------------------------------------------------------------
+# M5: embedding + entities + merge
+# ---------------------------------------------------------------------------
+#
+# Merge is the deliberately-relaxed cousin of supersede. M4's
+# `supersede_claim` enforces 1:1 (each new is the successor of at most one
+# old) because subject corrections are inherently per-claim. Merge is
+# many-to-one by design: an editor decides that several claims are
+# different phrasings of the same fact and folds them into one winner.
+#
+# The mechanical update on a merged loser looks exactly like a supersede:
+# loser.status='superseded', loser.superseded_by=winner.id, old text
+# untouched. Only the audit row differs (action='merge' with similarity
+# captured in payload) and the 1:1 invariant is relaxed.
+
+
+def set_claim_embedding(
+    db: OrmSession, *, claim_id: uuid.UUID, vector: Sequence[float]
+) -> Claim:
+    """Attach (or replace) the embedding vector for a claim.
+
+    Refuses to embed a superseded claim — dead claims don't need to be
+    in dedup queries, and the dedup SQL filters them out anyway.
+    """
+    if len(vector) != EMBEDDING_DIM:
+        raise ValueError(
+            f"embedding must be {EMBEDDING_DIM}-dim, got {len(vector)}"
+        )
+    claim = _load_claim_or_raise(db, claim_id)
+    if claim.status == "superseded":
+        raise ValueError(
+            "cannot embed a superseded claim — its successor is what "
+            "should appear in dedup candidates"
+        )
+    claim.embedding = list(vector)
+    db.flush()
+    return claim
+
+
+def get_or_create_entity(
+    db: OrmSession,
+    *,
+    subject_id: uuid.UUID,
+    kind: str,
+    canonical: str,
+) -> Entity:
+    """Idempotent on (subject_id, kind, canonical) — the unique index in
+    migration 0005 makes this safe to call repeatedly.
+    """
+    if not kind or not canonical:
+        raise ValueError("entity kind and canonical must be non-empty")
+    existing = db.execute(
+        select(Entity).where(
+            Entity.subject_id == subject_id,
+            Entity.kind == kind,
+            Entity.canonical == canonical,
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+    row = Entity(subject_id=subject_id, kind=kind, canonical=canonical)
+    db.add(row)
+    db.flush()
+    return row
+
+
+def link_claim_to_entities(
+    db: OrmSession,
+    *,
+    claim_id: uuid.UUID,
+    entity_ids: Sequence[uuid.UUID],
+) -> int:
+    """Attach entities to a claim. Idempotent: existing links are skipped.
+
+    Returns the number of NEW links created. Useful as a smoke check —
+    repeated calls with the same arguments return 0 after the first.
+    """
+    if not entity_ids:
+        return 0
+    _load_claim_or_raise(db, claim_id)
+    unique_ids = list(dict.fromkeys(entity_ids))
+    existing = set(
+        db.execute(
+            select(ClaimEntity.entity_id).where(
+                ClaimEntity.claim_id == claim_id,
+                ClaimEntity.entity_id.in_(unique_ids),
+            )
+        ).scalars()
+    )
+    created = 0
+    for entity_id in unique_ids:
+        if entity_id in existing:
+            continue
+        db.add(ClaimEntity(claim_id=claim_id, entity_id=entity_id))
+        created += 1
+    if created:
+        db.flush()
+    return created
+
+
+def merge_claim(
+    db: OrmSession,
+    *,
+    loser_id: uuid.UUID,
+    winner_id: uuid.UUID,
+    actor: str,
+    similarity: float | None = None,
+    note: str | None = None,
+) -> Claim:
+    """Editor-confirmed merge: `loser_id` is folded into `winner_id`.
+
+    Mechanically equivalent to supersede (loser.status='superseded',
+    loser.superseded_by=winner.id, loser.text untouched). Differences vs
+    M4 supersede:
+      - Audit row carries action='merge' + payload with similarity.
+      - 1:1 invariant relaxed: a winner MAY already be the successor of
+        other losers. Many-to-one merge is the whole point.
+
+    Invariants still enforced:
+      - actor non-empty
+      - loser.id != winner.id
+      - both exist (ClaimNotFound otherwise)
+      - same subject_id
+      - loser.status != 'superseded' (the loser must be live; merging a
+        historic claim makes no editorial sense — supersede its chain
+        leaf instead)
+      - winner.status != 'superseded' (can't merge into a dead claim)
+      - similarity, if provided, is in [-1, 1]
+    """
+    if not actor or not actor.strip():
+        raise ValueError("actor must not be empty")
+    if loser_id == winner_id:
+        raise ValueError("cannot merge a claim with itself")
+    if similarity is not None and not -1.0 <= similarity <= 1.0:
+        raise ValueError(f"similarity must be in [-1, 1], got {similarity}")
+
+    loser = _load_claim_or_raise(db, loser_id)
+    winner = _load_claim_or_raise(db, winner_id)
+
+    if loser.subject_id != winner.subject_id:
+        raise ValueError(
+            "cannot merge across subjects — loser and winner belong to "
+            "different subjects"
+        )
+    if loser.status == "superseded":
+        raise ValueError(
+            f"claim {loser_id} is already superseded — merging a historic "
+            "claim has no editorial meaning; merge the leaf of its chain"
+        )
+    if winner.status == "superseded":
+        raise ValueError(
+            f"winner {winner_id} is itself superseded — pick a live target"
+        )
+
+    # Set the link BEFORE the status flip so the migration-0004 CHECK
+    # (status='superseded') = (superseded_by IS NOT NULL) holds in the
+    # single UPDATE that _record_review emits.
+    loser.superseded_by = winner.id
+    payload: dict[str, Any] = {"winner_claim_id": str(winner.id)}
+    if similarity is not None:
+        payload["similarity"] = similarity
+    if note is not None:
+        payload["note"] = note
+
+    loser, _ = _record_review(
+        db,
+        claim=loser,
+        actor=actor,
+        action="merge",
+        new_status="superseded",
+        payload=payload,
+    )
+    return loser

@@ -12,6 +12,18 @@ dependencies = [
     "pydantic-settings>=2.6.1",
     "openai>=1.54.0",
     "instructor>=1.6.0",
+    "pgvector>=0.3.6",
+    "numpy>=2.1.0",
+]
+
+[project.optional-dependencies]
+# Heavy ML deps deliberately split out — M5's DeterministicEmbedder and
+# RuleEntityLinker keep the core install lightweight. Install with
+# `uv sync --extra ml` only when wiring BGEEmbedder or spaCy entity
+# linking.
+ml = [
+    "sentence-transformers>=3.3.0",
+    "spacy>=3.8.0",
 ]
 
 [dependency-groups]

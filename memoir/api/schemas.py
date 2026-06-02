@@ -110,3 +110,37 @@ class ClaimHistoryEntry(BaseModel):
     superseded_at: datetime | None
     superseded_by_actor: str | None
     note: str | None
+
+
+class MergeRequest(_ActorBody):
+    """Editor confirms that `loser_id` (URL) is the same fact as `winner_id`."""
+
+    winner_claim_id: uuid.UUID = Field(
+        description=(
+            "The live claim that survives the merge. The loser becomes "
+            "superseded and points at this winner. Many losers MAY share a "
+            "winner — that is the M5 relaxation versus M4 supersede."
+        ),
+    )
+    similarity: float | None = Field(
+        default=None,
+        ge=-1.0,
+        le=1.0,
+        description=(
+            "Optional cosine similarity from the dedup query — captured in "
+            "the audit payload so the merge decision is reviewable."
+        ),
+    )
+    note: str | None = Field(default=None)
+
+
+class MergeCandidateOut(BaseModel):
+    """A pair of claims surfaced as a possible merge.
+
+    §1 hard rule: surfacing a candidate is NOT a merge. The editor must
+    `POST /claims/{loser}/merge` to commit anything.
+    """
+
+    claim_a_id: uuid.UUID
+    claim_b_id: uuid.UUID
+    similarity: float
