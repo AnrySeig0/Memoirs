@@ -1,9 +1,9 @@
-"""Pytest fixtures for M1.
+"""Pytest fixtures for the M1–M6 test suite.
 
 Tests require a running Postgres (the trigger that enforces append-only
-utterances is plpgsql, not portable). Default DSN:
-
-    MEMOIR_TEST_DATABASE_URL=postgresql+psycopg://memoir:memoir@localhost:5432/memoir_test
+utterances is plpgsql, not portable). The DSN comes from
+`memoir.config.Settings.test_database_url`, set via the
+`MEMOIR_TEST_DATABASE_URL` env var or `.env`.
 
 If the URL is unreachable the whole DB-dependent suite is skipped — so
 `pytest` on a laptop without docker still passes the pure unit tests.
@@ -17,16 +17,13 @@ import pytest
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
+from memoir.config import get_settings
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_TEST_URL = "postgresql+psycopg://memoir:memoir@localhost:5432/memoir_test"
-
-
-def _test_database_url() -> str:
-    return os.environ.get("MEMOIR_TEST_DATABASE_URL", DEFAULT_TEST_URL)
 
 
 def _engine_or_skip() -> Engine:
-    url = _test_database_url()
+    url = get_settings().test_database_url
     engine = create_engine(url, future=True)
     try:
         with engine.connect() as conn:
@@ -39,7 +36,9 @@ def _engine_or_skip() -> Engine:
 @pytest.fixture(scope="session")
 def engine() -> Iterator[Engine]:
     engine = _engine_or_skip()
-    env = {**os.environ, "MEMOIR_DATABASE_URL": _test_database_url()}
+    # Alembic reads `MEMOIR_DATABASE_URL`; point it at the test DSN so a
+    # single test run is self-contained even without an `.env` file.
+    env = {**os.environ, "MEMOIR_DATABASE_URL": get_settings().test_database_url}
     subprocess.run(
         ["uv", "run", "alembic", "downgrade", "base"],
         cwd=REPO_ROOT,

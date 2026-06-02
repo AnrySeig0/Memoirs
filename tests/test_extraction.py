@@ -7,12 +7,12 @@ The live LLMExtractor test at the bottom hits a real OpenAI-compatible
 endpoint when `MEMOIR_LLM_TEST_BASE_URL` is set; otherwise it is skipped
 (same posture as the Postgres-required tests in conftest).
 """
-import os
 import uuid
 
 import pytest
 from pydantic import ValidationError
 
+from memoir.config import get_settings
 from memoir.extract import ExtractedClaim, Extractor, LLMExtractor, RuleExtractor
 from memoir.segment import Segment
 
@@ -90,27 +90,28 @@ def test_protocol_structural_match() -> None:
 
 
 @pytest.mark.skipif(
-    not os.environ.get("MEMOIR_LLM_TEST_BASE_URL"),
-    reason="MEMOIR_LLM_TEST_BASE_URL not set — live vLLM endpoint test skipped",
+    not get_settings().llm_effective_test_base_url,
+    reason="MEMOIR_LLM_TEST_BASE_URL (or MEMOIR_LLM_BASE_URL) not set — live vLLM endpoint test skipped",
 )
 def test_llm_extractor_against_live_endpoint() -> None:
     """Smoke-test the LLMExtractor against a real OpenAI-compatible server.
 
-    Set `MEMOIR_LLM_TEST_BASE_URL` to a running vLLM (or compatible) endpoint
-    e.g. `http://localhost:8000/v1`. Optionally set:
-        MEMOIR_LLM_TEST_MODEL   — model id served by the endpoint
-        MEMOIR_LLM_TEST_API_KEY — defaults to "EMPTY" (vLLM ignores it)
+    Reads `llm_test_*` settings (env: MEMOIR_LLM_TEST_BASE_URL,
+    MEMOIR_LLM_TEST_MODEL, MEMOIR_LLM_TEST_API_KEY). Each falls back to
+    the main `llm_*` setting so a developer who's already configured the
+    LLM extractor for normal use doesn't need separate test vars.
 
     Asserts the contract, not the content: every returned object is an
     `ExtractedClaim`, every claim cites at least one utterance ID drawn
     from the segment, and confidence sits in [0, 1].
     """
-    base_url = os.environ["MEMOIR_LLM_TEST_BASE_URL"]
-    model = os.environ.get("MEMOIR_LLM_TEST_MODEL", "Qwen/Qwen2.5-7B-Instruct")
-    api_key = os.environ.get("MEMOIR_LLM_TEST_API_KEY", "EMPTY")
-
+    settings = get_settings()
     seg = _segment("Tôi sinh năm 1962 ở Detroit. Bố tôi là kỹ sư.")
-    extractor = LLMExtractor(model=model, base_url=base_url, api_key=api_key)
+    extractor = LLMExtractor(
+        model=settings.llm_effective_test_model,
+        base_url=settings.llm_effective_test_base_url,
+        api_key=settings.llm_effective_test_api_key,
+    )
     claims = extractor.extract(seg)
 
     assert isinstance(claims, list)
