@@ -193,14 +193,125 @@ Khi nhân vật ở phiên 4 nói "thực ra là năm '62, không phải '61":
 
 ## 7. Lộ trình build (thứ tự ưu tiên)
 
-| Mốc | Nội dung | Tiêu chí hoàn thành |
-|-----|----------|---------------------|
-| M1 | Substrate + provenance (Step 1–2) | Transcript vào DB append-only, mọi utterance có offset/speaker |
-| M2 | Extraction có grounding (Step 3–4) | Mọi claim có ≥1 `claim_sources`; claim không nguồn bị loại/flag |
-| M3 | **Review UI** (Step 7) | Editor accept/reject/edit/flag được; có audit log |
-| M4 | Correction / supersede | Pass Correction test |
-| M5 | Embedding + dedup + entity (Step 5–6) | Gợi ý merge hiển thị; merge cần xác nhận; pass Merge safety test |
-| M6 | Provenance test toàn hệ | 100 claim ngẫu nhiên truy vết đúng = 100% |
+| Mốc | Nội dung | Tiêu chí hoàn thành | Trạng thái |
+|-----|----------|---------------------|------------|
+| M1 | Substrate + provenance (Step 1–2) | Transcript vào DB append-only, mọi utterance có offset/speaker | **DONE** |
+| M2 | Extraction có grounding (Step 3–4) | Mọi claim có ≥1 `claim_sources`; claim không nguồn bị loại/flag | **DONE** |
+| M3 | **Review UI** (Step 7) | Editor accept/reject/edit/flag được; có audit log | **DONE** |
+| M4 | Correction / supersede | Pass Correction test | **DONE** |
+| M5 | Embedding + dedup + entity (Step 5–6) | Gợi ý merge hiển thị; merge cần xác nhận; pass Merge safety test | **DONE** |
+| M6 | Provenance test toàn hệ | 100 claim ngẫu nhiên truy vết đúng = 100% | **DONE** |
+
+> **V1 hoàn tất.** Tất cả §1 pass/fail tests xanh: Provenance (100/100), Correction (text bất biến + history truy được), Merge safety (0 auto-commit). Substrate `utterances` + `claim_sources` + `review_log` append-only ở DB layer. `audit_provenance(claim_id)` là production-grade query operator có thể chạy bất kỳ lúc nào để kiểm tra integrity. Pipeline thực thi đầy đủ Step 1–7 (text-only ingestion + segment + extract + embed + dedup + review). Sẵn sàng làm nền cho **grounded generation ở V2**.
+
+### M6 — đã giao những gì
+
+- `memoir.store.audit_provenance(db, claim_id) -> ProvenanceResult` — production-grade audit, **read-only**, không bao giờ raise cho normal failures. Walk full chain claim → claim_sources → utterance → session → source; verify offsets (`char_start >= 0`, `char_end - char_start == len(text)`); reconstruct session transcript và assert `transcript[char_start:char_end] == utterance.text` (§5 lưu ý kiểm tra tại audit time); edit history recoverable từ `review_log.payload.previous_text`; supersede chain cycle-free; reviewed claim có ≥1 audit row. Collect tất cả issues thay vì short-circuit.
+- `tests/fixtures/corpus.py` — `build_realistic_corpus(db, seed)` deterministic builder: 2 subjects (English + Vietnamese diacritics), 8 sessions/subject, RuleExtractor + manual compound claims, varied review actions với proportions ~45% accept / 12% reject / 12% edit / 10% flag / 10% supersede / 8% merge / 3% pending. Mọi shuffle qua `random.Random(seed)` — runs identical mỗi session.
+- `tests/test_audit.py` (7 cases) — happy paths trên mọi state (fresh / accepted / edited / superseded / merged); missing claim flagged; **synthetic offset drift via `DISABLE TRIGGER`** đảm bảo audit thật sự catch được data corruption nếu xảy ra.
+- `tests/test_provenance.py` — **§1 M6 acceptance**:
+  - `test_100_random_reviewed_claims_trace_correctly` — build 158-claim corpus (149 reviewed), seeded `random.sample(seed=20260602)` 100 reviewed claims, audit 100/100 OK.
+  - `test_every_reviewed_state_present_in_corpus` — fixture genuinely exercises tất cả M3/M4 states.
+  - `test_audit_holds_across_subjects` — audit toàn bộ reviewed claims (không chỉ sample) để chứng minh §1 không phải may rủi sample.
+- Corpus stats audit chạy được (sau commit, `pytest -s`):
+  ```
+  [M6] corpus: 158 total claims, status breakdown:
+      pending=9, flagged=15, superseded=27, accepted=71, rejected=18, edited=18
+  ```
+
+### M5 — đã giao những gì
+
+- Alembic migration `0005_m5_embedding_entities` — `CREATE EXTENSION vector`; `claims.embedding VECTOR(1024)` nullable (BGE-m3 dim); bảng `entities`, `claim_entities`; UNIQUE `(subject_id, kind, canonical)` cho `get_or_create_entity`. **Không** tạo IVFFlat/HNSW index ở V1 — §9 không phức tạp hóa sớm.
+- `memoir/resolve/`:
+  - `Embedder` protocol runtime-checkable + `DeterministicEmbedder` (hash-based, L2-normalized, identical text → identical vector — dùng cho tests/baseline) + `BGEEmbedder` (lazy import sentence-transformers, raise nếu thiếu `ml` extras).
+  - `find_merge_candidates(db, subject_id, threshold, limit)` — pgvector cosine query `<=>`, **read-only**, scoped per subject, exclude superseded + unembedded.
+  - `RuleEntityLinker` — year regex + capitalized tokens (Unicode-aware cho dấu tiếng Việt). `EntityLinker` protocol cho future spaCy/underthesea.
+- `memoir/store/`:
+  - `set_claim_embedding`, `get_or_create_entity` (idempotent), `link_claim_to_entities` (idempotent).
+  - `merge_claim(loser, winner, actor, similarity?, note?)` — many-to-one supersede variant: same mechanical update như M4 (loser status='superseded', superseded_by=winner.id, **text untouched**) nhưng **relax invariant 1:1** (M4 strict, M5 cho phép nhiều losers chung 1 winner). Audit `action='merge'`, payload có `similarity`.
+- `memoir/api`:
+  - `GET /claims/dedup-candidates?subject_id=&threshold=&limit=` — declared TRƯỚC `/claims/{claim_id}` để FastAPI không parse "dedup-candidates" là UUID. Read-only.
+  - `POST /claims/{loser_id}/merge` — body `{actor, winner_claim_id, similarity?, note?}`. Path duy nhất commit merge.
+- Tests (102 active pass + 1 conditional skip):
+  - `test_embedder.py` (5) — dim, L2-normalized, identical→identical, different→orthogonal, protocol.
+  - `test_entity.py` (8) — RuleEntityLinker năm/proper noun/diacritics/dedup; get_or_create idempotent per-subject; link_claim_to_entities idempotent.
+  - `test_dedup.py` (6) — identical surface, unrelated suppressed, superseded excluded, unembedded excluded, per-subject scope, threshold validation.
+  - `test_merge_repository.py` (11) — happy + many-to-one + tất cả refusal invariants + sanity check rằng M4 supersede vẫn strict 1:1 sau M5.
+  - `test_api_dedup.py` (7) — HTTP happy, route ordering, threshold 422, merge supersedes loser, self-merge 422, 404 missing, round-trip surface→merge→candidate-disappears.
+  - **`test_merge_safety.py`** — §1 Merge safety acceptance gate: 5 trùng lặp, snapshot trước/sau `find_merge_candidates`, assert 0 row change ở mọi count (`claims_*`, `review_log_*`); rồi 1 explicit `merge_claim` → đúng 1 row flip + đúng 1 audit row + 3 trùng còn lại không bị động vào.
+
+Cố ý KHÔNG nằm trong M5:
+- IVFFlat/HNSW index — perf-tuning follow-up khi data lớn hơn.
+- BGE-m3/spaCy wire-up thật — surface ready ở `BGEEmbedder` + `EntityLinker` protocol; install qua `uv sync --extra ml` khi cần.
+- Auto-suggest merge type từ entity overlap — §9 "không tự giải quyết gì".
+
+### M4 — đã giao những gì
+
+- Alembic migration `0004_m4_supersede` — partial index `ix_claims_superseded_by WHERE superseded_by IS NOT NULL` cho backward walk + CHECK `(status='superseded') = (superseded_by IS NOT NULL)` ghép cặp 2 cột ở DB layer. Mọi code path nào set 1 mà thiếu cái còn lại → reject.
+- `memoir.store.supersede_claim(old_id, new_id, actor, note?)` — 1 transaction:
+  - Validate 7 invariants: actor non-empty, không self-supersede, cùng `subject_id`, `old` chưa từng superseded (phải supersede leaf), `new` không phải đang superseded, `new` chưa là successor của ai khác (1:1; many-to-one là merge → M5), old/new tồn tại.
+  - Set `old.status='superseded'`, `old.superseded_by=new.id`, `reviewed_at/reviewed_by`. **Không đụng `old.text`** — §6 hard rule.
+  - Ghi `review_log action='supersede'`, payload `{new_claim_id, note?}`.
+- `memoir.store.claim_history(claim_id)` — walk backward về root + forward đến leaf, trả về chain `HistoryEntry(claim, superseded_at, superseded_by_actor, note)`. Cycle defensive break. Mỗi non-leaf link kèm audit timestamp từ `review_log`.
+- `memoir.api`:
+  - `POST /claims/{old_id}/supersede` — body `{actor, new_claim_id, note?}` → updated old claim. 404 nếu thiếu, 422 nếu vi phạm invariant.
+  - `GET /claims/{id}/history` → list `ClaimHistoryEntry` theo thứ tự thời gian. §6 "đã nói gì → sửa thành gì → khi nào" trên 1 endpoint.
+- Tests:
+  - `tests/test_correction.py` — §1 Correction test acceptance: old vẫn tồn tại, text bất biến, status='superseded', history kể đủ chuỗi với timestamp + actor + note.
+  - `tests/test_supersede_repository.py` (11 cases) — happy + 7 refusal invariants + chain C1→C2→C3 + DB CHECK chặn manual drift.
+  - `tests/test_api_supersede.py` (8 cases) — HTTP happy, 404, 422 self-supersede, 422 Pydantic missing actor, history endpoint, audit visible in `/log`.
+  - 2 existing tests (`test_edit_on_superseded_*` ở M3) cập nhật để dùng supersede chain thật thay vì shortcut insert (M4 CHECK invariant không cho shortcut nữa — đó chính xác là việc nó làm).
+
+Cố ý KHÔNG nằm trong M4:
+- Many-to-one supersede (1 new ← nhiều old) — đó là merge, M5.
+- Auto-detect correction từ extraction — §9 "không tự giải quyết gì"; editor luôn xác nhận.
+
+### M3 — đã giao những gì
+
+- Alembic migration `0003_m3_review_log` — bảng `review_log` (§4 schema) + Postgres trigger chặn UPDATE/DELETE. Audit row không bị viết đè; reviewer có thể bất đồng với chính mình bằng cách thêm row mới, row cũ vẫn còn.
+- `memoir.store.{accept,reject,edit,flag}_claim` — mỗi function trong 1 transaction: validate → update `claims` (status/reviewed_at/reviewed_by, riêng `edit` cập nhật `text`) → insert `review_log` row. `edit` lưu `previous_text` vào payload — có thể recover lời ban đầu.
+- `edit` trên `superseded` claim → refuse (M4 supersede flow là path đúng để thêm narrative mới, không sửa lịch sử).
+- `memoir.api` (FastAPI):
+  - `GET /claims?status=pending&subject_id=…&limit&offset` — claim + grounding utterances inline, 1 round-trip đáp ứng §1 "hiển thị cạnh câu gốc".
+  - `GET /claims/{id}` — chi tiết 1 claim.
+  - `POST /claims/{id}/{accept,reject,edit,flag}` — body Pydantic-validated (`actor` required, `reason`/`text` tùy action), 404 khi không tồn tại, 422 khi vi phạm lifecycle.
+  - `GET /claims/{id}/log` — audit history theo thời gian.
+  - `GET /healthz`. Swagger UI tại `/docs` = editor surface M3.
+- `main.py` re-wire: từ FastAPI hello-world → `from memoir.api import app`. Khởi động: `uvicorn main:app --host 0.0.0.0 --port 8000`.
+- Tests: `test_review_repository.py` (9 cases — 4 actions, reversal grows log, edit-superseded refused, empty actor refused, DB trigger blocks UPDATE/DELETE trên review_log), `test_api_review.py` (13 cases — happy paths, 404, 422 Pydantic, 422 lifecycle, two-action reversal).
+
+Cách thử nghiệm thủ công:
+```bash
+uvicorn main:app --reload
+# mở http://localhost:8000/docs (Swagger), gọi POST /claims/{id}/accept với body {"actor":"alice"}
+```
+
+FE (Streamlit/React) là follow-up — Swagger đủ làm editor surface để validate quy trình.
+
+### M2 — đã giao những gì
+
+- Alembic migration `0002_m2_claims` — bảng `claims` + `claim_sources` (§4 schema, trừ `embedding`/entities để dành M5). CHECK `confidence BETWEEN 0 AND 1`, CHECK `status` trong tập 6 giá trị, CHECK `superseded_by <> id`. Postgres trigger chặn UPDATE/DELETE trên `claim_sources` — provenance một khi đã xác lập không được viết đè.
+- `memoir.extract.ExtractedClaim` (Pydantic) — `source_utterance_ids: list[UUID] = Field(min_length=1)`, `confidence` clamp `[0,1]`. Mọi extractor (rule/LLM/future) phải đi qua schema này; output không nguồn bị reject ở validation layer.
+- `memoir.store.insert_claim_with_sources` — viết claim + claim_sources trong 1 transaction; gọi với `source_utterance_ids=[]` raise `ValueError` trước khi chạm DB. Dedup trùng utterance id, validate status/confidence.
+- `memoir.segment.segment_by_utterance` — Step 3 identity segmentation (1 utterance = 1 segment), giữ nguyên offset. Glue policy `segment_by_turn_window(max_chars)` là next step nhưng không thay đổi contract M2.
+- `memoir.extract.RuleExtractor` — year-detector deterministic (regex `\b(?:19|20)\d{2}\b`), confidence 0.5; làm baseline + dùng cho tests không cần LLM. `LLMExtractor` stub đầy đủ docstring chỉ rõ shape Instructor/vLLM cho follow-up.
+- Tests: `test_extraction.py` (7 cases — Pydantic, RuleExtractor Vietnamese, protocol structural match), `test_claim_repository.py` (6 cases — repo reject empty / confidence / status, atomic insert, dedup, trigger), `test_grounded_pipeline.py` (e2e ingest → segment → extract → store + assert orphan claims = 0).
+
+LLM integration (Outlines/Instructor + Qwen/Llama qua vLLM) **không nằm trong M2** — acceptance là grounding contract, không phải chất lượng văn xuôi. `LLMExtractor.extract()` raise `NotImplementedError` để rõ surface; là follow-up PR độc lập.
+
+### M1 — đã giao những gì
+
+- Alembic migration `0001_m1_substrate` tạo `sources`, `sessions`, `utterances` (đúng §4) + Postgres trigger chặn `UPDATE`/`DELETE` trên `utterances`.
+- `memoir.store` (models, engine, repository) — repository chỉ expose `insert_*` cho utterances, không có path cập nhật/xóa từ tầng code.
+- `memoir.ingest.ingest_text_transcript(turns, …)` — text-only ingestion, tính `char_start`/`char_end` theo Unicode codepoint trên transcript chuẩn hóa (`"\n".join(turn.text)`). Audio + WhisperX/pyannote để lại cho mở rộng sau.
+- Tests: `tests/test_offsets.py` (pure unit, chạy không cần DB) + `tests/test_append_only.py` (cần Postgres — tự skip nếu DSN unreachable).
+
+Cách chạy DB-backed tests cục bộ:
+```bash
+docker compose up -d postgres
+docker exec memoir-postgres psql -U memoir -c "CREATE DATABASE memoir_test"
+uv run pytest
+```
 
 > Review UI (M3) đến **trước** dedup/entity (M5) — vì niềm tin biên tập được tạo ở chỗ con người thấy và sửa được, không phải ở chỗ máy "thông minh".
 

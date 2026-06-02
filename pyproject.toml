@@ -1,0 +1,37 @@
+[project]
+name = "memoir"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.136.3",
+    "uvicorn>=0.48.0",
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.14.0",
+    "psycopg[binary]>=3.2.3",
+    "pydantic>=2.9.2",
+    "pydantic-settings>=2.6.1",
+    "openai>=1.54.0",
+    "instructor>=1.6.0",
+    "pgvector>=0.3.6",
+    "numpy>=2.1.0",
+]
+
+[project.optional-dependencies]
+# Heavy ML deps deliberately split out — M5's DeterministicEmbedder and
+# RuleEntityLinker keep the core install lightweight. Install with
+# `uv sync --extra ml` only when wiring BGEEmbedder or spaCy entity
+# linking.
+ml = [
+    "sentence-transformers>=3.3.0",
+    "spacy>=3.8.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.3",
+    "httpx>=0.28.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
