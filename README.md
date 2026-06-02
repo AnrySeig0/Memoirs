@@ -193,14 +193,28 @@ Khi nhân vật ở phiên 4 nói "thực ra là năm '62, không phải '61":
 
 ## 7. Lộ trình build (thứ tự ưu tiên)
 
-| Mốc | Nội dung | Tiêu chí hoàn thành |
-|-----|----------|---------------------|
-| M1 | Substrate + provenance (Step 1–2) | Transcript vào DB append-only, mọi utterance có offset/speaker |
-| M2 | Extraction có grounding (Step 3–4) | Mọi claim có ≥1 `claim_sources`; claim không nguồn bị loại/flag |
-| M3 | **Review UI** (Step 7) | Editor accept/reject/edit/flag được; có audit log |
-| M4 | Correction / supersede | Pass Correction test |
-| M5 | Embedding + dedup + entity (Step 5–6) | Gợi ý merge hiển thị; merge cần xác nhận; pass Merge safety test |
-| M6 | Provenance test toàn hệ | 100 claim ngẫu nhiên truy vết đúng = 100% |
+| Mốc | Nội dung | Tiêu chí hoàn thành | Trạng thái |
+|-----|----------|---------------------|------------|
+| M1 | Substrate + provenance (Step 1–2) | Transcript vào DB append-only, mọi utterance có offset/speaker | **DONE** |
+| M2 | Extraction có grounding (Step 3–4) | Mọi claim có ≥1 `claim_sources`; claim không nguồn bị loại/flag | TODO |
+| M3 | **Review UI** (Step 7) | Editor accept/reject/edit/flag được; có audit log | TODO |
+| M4 | Correction / supersede | Pass Correction test | TODO |
+| M5 | Embedding + dedup + entity (Step 5–6) | Gợi ý merge hiển thị; merge cần xác nhận; pass Merge safety test | TODO |
+| M6 | Provenance test toàn hệ | 100 claim ngẫu nhiên truy vết đúng = 100% | TODO |
+
+### M1 — đã giao những gì
+
+- Alembic migration `0001_m1_substrate` tạo `sources`, `sessions`, `utterances` (đúng §4) + Postgres trigger chặn `UPDATE`/`DELETE` trên `utterances`.
+- `memoir.store` (models, engine, repository) — repository chỉ expose `insert_*` cho utterances, không có path cập nhật/xóa từ tầng code.
+- `memoir.ingest.ingest_text_transcript(turns, …)` — text-only ingestion, tính `char_start`/`char_end` theo Unicode codepoint trên transcript chuẩn hóa (`"\n".join(turn.text)`). Audio + WhisperX/pyannote để lại cho mở rộng sau.
+- Tests: `tests/test_offsets.py` (pure unit, chạy không cần DB) + `tests/test_append_only.py` (cần Postgres — tự skip nếu DSN unreachable).
+
+Cách chạy DB-backed tests cục bộ:
+```bash
+docker compose up -d postgres
+docker exec memoir-postgres psql -U memoir -c "CREATE DATABASE memoir_test"
+uv run pytest
+```
 
 > Review UI (M3) đến **trước** dedup/entity (M5) — vì niềm tin biên tập được tạo ở chỗ con người thấy và sửa được, không phải ở chỗ máy "thông minh".
 
