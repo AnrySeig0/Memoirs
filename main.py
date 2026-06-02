@@ -1,13 +1,9 @@
-from fastapi import FastAPI
+"""Entry point for `uvicorn main:app`.
 
-app = FastAPI()
+The actual app lives in `memoir.api`. This module is kept thin so the
+deployment command (`uvicorn main:app --host 0.0.0.0 --port 8000`) stays
+stable across milestones.
+"""
+from memoir.api import app
 
-
-@app.get("/")
-async def root():
-    return {"message": "Hello World"}
-
-
-@app.get("/hello/{name}")
-async def say_hello(name: str):
-    return {"message": f"Hello {name}"}
+__all__ = ["app"]

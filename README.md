@@ -197,10 +197,32 @@ Khi nhân vật ở phiên 4 nói "thực ra là năm '62, không phải '61":
 |-----|----------|---------------------|------------|
 | M1 | Substrate + provenance (Step 1–2) | Transcript vào DB append-only, mọi utterance có offset/speaker | **DONE** |
 | M2 | Extraction có grounding (Step 3–4) | Mọi claim có ≥1 `claim_sources`; claim không nguồn bị loại/flag | **DONE** |
-| M3 | **Review UI** (Step 7) | Editor accept/reject/edit/flag được; có audit log | TODO |
+| M3 | **Review UI** (Step 7) | Editor accept/reject/edit/flag được; có audit log | **DONE** |
 | M4 | Correction / supersede | Pass Correction test | TODO |
 | M5 | Embedding + dedup + entity (Step 5–6) | Gợi ý merge hiển thị; merge cần xác nhận; pass Merge safety test | TODO |
 | M6 | Provenance test toàn hệ | 100 claim ngẫu nhiên truy vết đúng = 100% | TODO |
+
+### M3 — đã giao những gì
+
+- Alembic migration `0003_m3_review_log` — bảng `review_log` (§4 schema) + Postgres trigger chặn UPDATE/DELETE. Audit row không bị viết đè; reviewer có thể bất đồng với chính mình bằng cách thêm row mới, row cũ vẫn còn.
+- `memoir.store.{accept,reject,edit,flag}_claim` — mỗi function trong 1 transaction: validate → update `claims` (status/reviewed_at/reviewed_by, riêng `edit` cập nhật `text`) → insert `review_log` row. `edit` lưu `previous_text` vào payload — có thể recover lời ban đầu.
+- `edit` trên `superseded` claim → refuse (M4 supersede flow là path đúng để thêm narrative mới, không sửa lịch sử).
+- `memoir.api` (FastAPI):
+  - `GET /claims?status=pending&subject_id=…&limit&offset` — claim + grounding utterances inline, 1 round-trip đáp ứng §1 "hiển thị cạnh câu gốc".
+  - `GET /claims/{id}` — chi tiết 1 claim.
+  - `POST /claims/{id}/{accept,reject,edit,flag}` — body Pydantic-validated (`actor` required, `reason`/`text` tùy action), 404 khi không tồn tại, 422 khi vi phạm lifecycle.
+  - `GET /claims/{id}/log` — audit history theo thời gian.
+  - `GET /healthz`. Swagger UI tại `/docs` = editor surface M3.
+- `main.py` re-wire: từ FastAPI hello-world → `from memoir.api import app`. Khởi động: `uvicorn main:app --host 0.0.0.0 --port 8000`.
+- Tests: `test_review_repository.py` (9 cases — 4 actions, reversal grows log, edit-superseded refused, empty actor refused, DB trigger blocks UPDATE/DELETE trên review_log), `test_api_review.py` (13 cases — happy paths, 404, 422 Pydantic, 422 lifecycle, two-action reversal).
+
+Cách thử nghiệm thủ công:
+```bash
+uvicorn main:app --reload
+# mở http://localhost:8000/docs (Swagger), gọi POST /claims/{id}/accept với body {"actor":"alice"}
+```
+
+FE (Streamlit/React) là follow-up — Swagger đủ làm editor surface để validate quy trình.
 
 ### M2 — đã giao những gì
 

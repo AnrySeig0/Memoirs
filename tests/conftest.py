@@ -70,8 +70,8 @@ def db_session(engine: Engine) -> Iterator[Session]:
         # operator action.
         conn.execute(
             text(
-                "TRUNCATE claim_sources, claims, utterances, sessions, sources "
-                "RESTART IDENTITY CASCADE"
+                "TRUNCATE review_log, claim_sources, claims, utterances, "
+                "sessions, sources RESTART IDENTITY CASCADE"
             )
         )
     session = factory()
@@ -79,3 +79,38 @@ def db_session(engine: Engine) -> Iterator[Session]:
         yield session
     finally:
         session.close()
+
+
+@pytest.fixture
+def api_client(engine: Engine, db_session: Session) -> Iterator:
+    """FastAPI TestClient bound to the same engine as `db_session`.
+
+    The handler-side dependency `get_db` is overridden to yield a fresh
+    session per request from the test engine. We share the engine, NOT
+    the session — handlers commit on their own sessions, then `db_session`
+    sees those commits because both speak to the same Postgres.
+    """
+    from fastapi.testclient import TestClient
+
+    from memoir.api import app
+    from memoir.api.deps import get_db
+
+    factory = sessionmaker(bind=engine, expire_on_commit=False, future=True)
+
+    def _override_get_db() -> Iterator[Session]:
+        s = factory()
+        try:
+            yield s
+            s.commit()
+        except Exception:
+            s.rollback()
+            raise
+        finally:
+            s.close()
+
+    app.dependency_overrides[get_db] = _override_get_db
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        app.dependency_overrides.clear()

@@ -2,7 +2,12 @@
 
 Pure unit — no DB. Covers the load-bearing Pydantic contract and the
 deterministic RuleExtractor used as the M2 baseline.
+
+The live LLMExtractor test at the bottom hits a real OpenAI-compatible
+endpoint when `MEMOIR_LLM_TEST_BASE_URL` is set; otherwise it is skipped
+(same posture as the Postgres-required tests in conftest).
 """
+import os
 import uuid
 
 import pytest
@@ -84,7 +89,36 @@ def test_protocol_structural_match() -> None:
     assert isinstance(LLMExtractor(), Extractor)
 
 
-def test_llm_extractor_is_stub_in_m2() -> None:
-    """LLM integration is deliberately deferred to a post-M2 follow-up."""
-    with pytest.raises(NotImplementedError, match="post-M2"):
-        LLMExtractor().extract(_segment("Năm 1962."))
+@pytest.mark.skipif(
+    not os.environ.get("MEMOIR_LLM_TEST_BASE_URL"),
+    reason="MEMOIR_LLM_TEST_BASE_URL not set — live vLLM endpoint test skipped",
+)
+def test_llm_extractor_against_live_endpoint() -> None:
+    """Smoke-test the LLMExtractor against a real OpenAI-compatible server.
+
+    Set `MEMOIR_LLM_TEST_BASE_URL` to a running vLLM (or compatible) endpoint
+    e.g. `http://localhost:8000/v1`. Optionally set:
+        MEMOIR_LLM_TEST_MODEL   — model id served by the endpoint
+        MEMOIR_LLM_TEST_API_KEY — defaults to "EMPTY" (vLLM ignores it)
+
+    Asserts the contract, not the content: every returned object is an
+    `ExtractedClaim`, every claim cites at least one utterance ID drawn
+    from the segment, and confidence sits in [0, 1].
+    """
+    base_url = os.environ["MEMOIR_LLM_TEST_BASE_URL"]
+    model = os.environ.get("MEMOIR_LLM_TEST_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+    api_key = os.environ.get("MEMOIR_LLM_TEST_API_KEY", "EMPTY")
+
+    seg = _segment("Tôi sinh năm 1962 ở Detroit. Bố tôi là kỹ sư.")
+    extractor = LLMExtractor(model=model, base_url=base_url, api_key=api_key)
+    claims = extractor.extract(seg)
+
+    assert isinstance(claims, list)
+    allowed = set(seg.utterance_ids)
+    for c in claims:
+        assert isinstance(c, ExtractedClaim)
+        assert c.source_utterance_ids, "min_length=1 must hold"
+        assert set(c.source_utterance_ids).issubset(allowed), (
+            "LLM cited an ID outside the segment — wrapper should have filtered"
+        )
+        assert 0.0 <= c.confidence <= 1.0
