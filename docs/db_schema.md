@@ -71,8 +71,8 @@ erDiagram
         TEXT reviewed_by "nullable"
     }
     claim_sources {
-        UUID claim_id PK_FK "composite PK"
-        UUID utterance_id PK_FK
+        UUID claim_id PK, FK "composite PK"
+        UUID utterance_id PK, FK
     }
     entities {
         UUID id PK
@@ -82,8 +82,8 @@ erDiagram
         TIMESTAMPTZ created_at
     }
     claim_entities {
-        UUID claim_id PK_FK "composite PK"
-        UUID entity_id PK_FK
+        UUID claim_id PK, FK "composite PK"
+        UUID entity_id PK, FK
     }
     review_log {
         UUID id PK
@@ -98,7 +98,7 @@ erDiagram
 **Đọc nhanh:**
 - `||--o{` = 1-to-many (parent bắt buộc, children tùy ý có 0..N).
 - `}o--||` = many-to-one trở lại — dùng cho self-FK `superseded_by`.
-- `PK_FK` = cột vừa là FK vừa nằm trong composite primary key.
+- `PK, FK` = cột vừa là FK vừa nằm trong composite primary key.
 
 ---
 

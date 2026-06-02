@@ -113,8 +113,8 @@ erDiagram
         TEXT reviewed_by
     }
     claim_sources {
-        UUID claim_id PK_FK "APPEND-ONLY (trigger)"
-        UUID utterance_id PK_FK
+        UUID claim_id PK, FK "APPEND-ONLY (trigger)"
+        UUID utterance_id PK, FK
     }
     entities {
         UUID id PK
@@ -124,8 +124,8 @@ erDiagram
         TIMESTAMPTZ created_at
     }
     claim_entities {
-        UUID claim_id PK_FK
-        UUID entity_id PK_FK
+        UUID claim_id PK, FK
+        UUID entity_id PK, FK
     }
     review_log {
         UUID id PK "APPEND-ONLY (trigger)"
