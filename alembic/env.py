@@ -1,9 +1,9 @@
-import os
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from memoir.config import get_settings
 from memoir.store.models import Base
 
 config = context.config
@@ -11,9 +11,11 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-env_url = os.environ.get("MEMOIR_DATABASE_URL")
-if env_url:
-    config.set_main_option("sqlalchemy.url", env_url)
+# Resolve DSN through the centralized config so MEMOIR_DATABASE_URL,
+# .env, and alembic.ini all funnel into one place. alembic.ini's
+# `sqlalchemy.url` stays as a fallback for the unusual case where
+# someone runs alembic without the app's settings on the path.
+config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 target_metadata = Base.metadata
 

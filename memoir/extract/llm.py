@@ -10,17 +10,19 @@ Wiring per README §5:
 
 The system prompt encodes the §9 posture: under-extract on uncertainty,
 do not resolve contradictions, output nothing if unsure.
+
+Defaults — including `model`, `base_url`, `api_key`, `temperature` —
+flow from `memoir.config.get_settings()` (which reads MEMOIR_LLM_*
+env vars / .env). Explicit constructor args still win.
 """
-import os
 import uuid
 
 import instructor
 from openai import OpenAI
 
+from memoir.config import get_settings
 from memoir.extract.types import CANONICAL_CLAIM_TYPES, ExtractedClaim
 from memoir.segment.types import Segment
-
-DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 
 SYSTEM_PROMPT = (
     "You extract atomic claims from a single segment of a memoir interview.\n"
@@ -52,24 +54,27 @@ SYSTEM_PROMPT = (
 class LLMExtractor:
     """Instructor + OpenAI-compatible extractor.
 
-    Defaults read from env:
-        OPENAI_BASE_URL  → vLLM endpoint (e.g. http://localhost:8000/v1)
-        OPENAI_API_KEY   → any non-empty string for local vLLM
-    Explicit constructor args win over env.
+    All defaults come from `memoir.config.Settings` (MEMOIR_LLM_* env
+    vars or `.env`). Pass kwargs to override per instance — useful for
+    tests and for the live-endpoint smoke check that needs a different
+    base_url.
     """
 
     def __init__(
         self,
         *,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
         base_url: str | None = None,
         api_key: str | None = None,
-        temperature: float = 0.0,
+        temperature: float | None = None,
     ) -> None:
-        self.model = model
-        self.base_url = base_url or os.environ.get("OPENAI_BASE_URL")
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY") or "EMPTY"
-        self.temperature = temperature
+        settings = get_settings()
+        self.model = model or settings.llm_model
+        self.base_url = base_url or settings.llm_base_url
+        self.api_key = api_key or settings.llm_api_key
+        self.temperature = (
+            temperature if temperature is not None else settings.llm_temperature
+        )
         self._client: instructor.Instructor | None = None
 
     def _get_client(self) -> instructor.Instructor:

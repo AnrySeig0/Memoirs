@@ -5,7 +5,7 @@ from functools import lru_cache
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from memoir.store.config import get_settings
+from memoir.config import get_settings
 
 
 @lru_cache

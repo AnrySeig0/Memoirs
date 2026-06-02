@@ -1,13 +1,19 @@
+# Local dev stack. Reads credentials from .env (Compose auto-loads it).
+# `docker compose up -d` with no .env still works — the ${VAR:-default}
+# fallbacks match the defaults in memoir/config.py, so app + DB agree.
+#
+# For prod-shaped overrides, set MEMOIR_* in .env (see .env.example).
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: memoir-postgres
     environment:
-      POSTGRES_USER: memoir
-      POSTGRES_PASSWORD: memoir
-      POSTGRES_DB: memoir
+      POSTGRES_USER: ${POSTGRES_USER:-memoir}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-memoir}
+      POSTGRES_DB: ${POSTGRES_DB:-memoir}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -16,11 +22,11 @@ services:
     container_name: memoir-minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: memoir
-      MINIO_ROOT_PASSWORD: memoir-secret
+      MINIO_ROOT_USER: ${MEMOIR_MINIO_ACCESS_KEY:-memoir}
+      MINIO_ROOT_PASSWORD: ${MEMOIR_MINIO_SECRET_KEY:-memoir-secret}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio_data:/data
 
@@ -28,7 +34,7 @@ services:
     image: redis:7-alpine
     container_name: memoir-redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
 
