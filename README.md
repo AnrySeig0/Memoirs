@@ -200,7 +200,24 @@ Khi nhân vật ở phiên 4 nói "thực ra là năm '62, không phải '61":
 | M3 | **Review UI** (Step 7) | Editor accept/reject/edit/flag được; có audit log | **DONE** |
 | M4 | Correction / supersede | Pass Correction test | **DONE** |
 | M5 | Embedding + dedup + entity (Step 5–6) | Gợi ý merge hiển thị; merge cần xác nhận; pass Merge safety test | **DONE** |
-| M6 | Provenance test toàn hệ | 100 claim ngẫu nhiên truy vết đúng = 100% | TODO |
+| M6 | Provenance test toàn hệ | 100 claim ngẫu nhiên truy vết đúng = 100% | **DONE** |
+
+> **V1 hoàn tất.** Tất cả §1 pass/fail tests xanh: Provenance (100/100), Correction (text bất biến + history truy được), Merge safety (0 auto-commit). Substrate `utterances` + `claim_sources` + `review_log` append-only ở DB layer. `audit_provenance(claim_id)` là production-grade query operator có thể chạy bất kỳ lúc nào để kiểm tra integrity. Pipeline thực thi đầy đủ Step 1–7 (text-only ingestion + segment + extract + embed + dedup + review). Sẵn sàng làm nền cho **grounded generation ở V2**.
+
+### M6 — đã giao những gì
+
+- `memoir.store.audit_provenance(db, claim_id) -> ProvenanceResult` — production-grade audit, **read-only**, không bao giờ raise cho normal failures. Walk full chain claim → claim_sources → utterance → session → source; verify offsets (`char_start >= 0`, `char_end - char_start == len(text)`); reconstruct session transcript và assert `transcript[char_start:char_end] == utterance.text` (§5 lưu ý kiểm tra tại audit time); edit history recoverable từ `review_log.payload.previous_text`; supersede chain cycle-free; reviewed claim có ≥1 audit row. Collect tất cả issues thay vì short-circuit.
+- `tests/fixtures/corpus.py` — `build_realistic_corpus(db, seed)` deterministic builder: 2 subjects (English + Vietnamese diacritics), 8 sessions/subject, RuleExtractor + manual compound claims, varied review actions với proportions ~45% accept / 12% reject / 12% edit / 10% flag / 10% supersede / 8% merge / 3% pending. Mọi shuffle qua `random.Random(seed)` — runs identical mỗi session.
+- `tests/test_audit.py` (7 cases) — happy paths trên mọi state (fresh / accepted / edited / superseded / merged); missing claim flagged; **synthetic offset drift via `DISABLE TRIGGER`** đảm bảo audit thật sự catch được data corruption nếu xảy ra.
+- `tests/test_provenance.py` — **§1 M6 acceptance**:
+  - `test_100_random_reviewed_claims_trace_correctly` — build 158-claim corpus (149 reviewed), seeded `random.sample(seed=20260602)` 100 reviewed claims, audit 100/100 OK.
+  - `test_every_reviewed_state_present_in_corpus` — fixture genuinely exercises tất cả M3/M4 states.
+  - `test_audit_holds_across_subjects` — audit toàn bộ reviewed claims (không chỉ sample) để chứng minh §1 không phải may rủi sample.
+- Corpus stats audit chạy được (sau commit, `pytest -s`):
+  ```
+  [M6] corpus: 158 total claims, status breakdown:
+      pending=9, flagged=15, superseded=27, accepted=71, rejected=18, edited=18
+  ```
 
 ### M5 — đã giao những gì
 

@@ -13,6 +13,7 @@ Quy tắc cứng (enforce ở tầng code + DB):
 - Correction = supersede: tạo claim mới + set superseded_by trên claim
   cũ. KHÔNG ghi đè text cũ (M4).
 """
+from memoir.store.audit import ProvenanceResult, audit_provenance
 from memoir.store.db import get_engine, session_scope
 from memoir.store.models import (
     EMBEDDING_DIM,
@@ -56,6 +57,7 @@ __all__ = [
     "EMBEDDING_DIM",
     "Entity",
     "HistoryEntry",
+    "ProvenanceResult",
     "ReviewLog",
     "Session",
     "Source",
@@ -63,6 +65,7 @@ __all__ = [
     "VALID_CLAIM_STATUSES",
     "VALID_REVIEW_ACTIONS",
     "accept_claim",
+    "audit_provenance",
     "claim_history",
     "edit_claim",
     "flag_claim",
