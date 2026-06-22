@@ -282,7 +282,7 @@ Cố ý KHÔNG nằm trong M4:
 
 Cách thử nghiệm thủ công:
 ```bash
-uvicorn main:app --reload
+cd backend && uvicorn main:app --reload
 # mở http://localhost:8000/docs (Swagger), gọi POST /claims/{id}/accept với body {"actor":"alice"}
 ```
 
@@ -308,9 +308,9 @@ LLM integration (Outlines/Instructor + Qwen/Llama qua vLLM) **không nằm trong
 
 Cách chạy DB-backed tests cục bộ:
 ```bash
-docker compose up -d postgres
+docker compose up -d postgres                                          # từ repo root
 docker exec memoir-postgres psql -U memoir -c "CREATE DATABASE memoir_test"
-uv run pytest
+cd backend && uv run pytest                                            # backend Python sống trong backend/
 ```
 
 > Review UI (M3) đến **trước** dedup/entity (M5) — vì niềm tin biên tập được tạo ở chỗ con người thấy và sửa được, không phải ở chỗ máy "thông minh".
@@ -322,22 +322,31 @@ uv run pytest
 ```
 memoir-engine/
 ├── README.md
-├── docker-compose.yml          # postgres+pgvector, minio, redis
-├── alembic/                    # migrations cho schema mục 4
-├── memoir/
-│   ├── ingest/                 # Step 1-2: ASR, diarization, ghi substrate
-│   ├── segment/                # Step 3: chunking giữ offset
-│   ├── extract/                # Step 4: LLM + schema (Outlines/Instructor)
-│   ├── resolve/                # Step 5-6: embedding, dedup, entity
-│   ├── store/                  # models, repository, ràng buộc grounding
-│   └── api/                    # FastAPI cho Review UI
-├── ui/                         # React (hoặc Streamlit prototype)
-├── tests/
-│   ├── test_provenance.py      # 100% truy vết
-│   ├── test_correction.py      # supersede không mất dữ liệu
-│   └── test_merge_safety.py    # không auto-commit merge
-└── workers/                    # Celery/Prefect jobs
+├── docker-compose.yml          # postgres+pgvector, minio, redis (repo root)
+├── ui/                         # React (hoặc Streamlit prototype) — frontend placeholder
+├── docs/                       # design + plan refactor
+└── backend/                    # toàn bộ Python backend (theo ai_agent_template)
+    ├── pyproject.toml, uv.lock, .env.example
+    ├── alembic/                # migrations cho schema mục 4
+    ├── main.py                 # entrypoint: `uvicorn main:app`
+    ├── app/
+    │   ├── ingest/             # Step 1-2: ASR, diarization, ghi substrate
+    │   ├── segment/            # Step 3: chunking giữ offset
+    │   ├── extract/            # Step 4: LLM + schema (Outlines/Instructor)
+    │   ├── resolve/            # Step 5-6: embedding, dedup, entity
+    │   ├── store/              # models, repository, ràng buộc grounding
+    │   ├── api/                # FastAPI cho Review UI
+    │   └── worker/             # Celery/Prefect jobs
+    └── tests/
+        ├── test_provenance.py  # 100% truy vết
+        ├── test_correction.py  # supersede không mất dữ liệu
+        └── test_merge_safety.py # không auto-commit merge
 ```
+
+> Bố cục `backend/app/{ingest,segment,extract,resolve,store,api}` là trạng thái
+> sau Phase 0 (di chuyển cơ học). Các phase tiếp theo tách `store/` thành
+> `db/` + `repositories/`, thêm `core/`, `schemas/`, `services/` theo
+> [docs/07_2026_refactor_v1.md](docs/07_2026_refactor_v1.md).
 
 ---
 

@@ -1,6 +1,6 @@
 # Local dev stack. Reads credentials from .env (Compose auto-loads it).
 # `docker compose up -d` with no .env still works — the ${VAR:-default}
-# fallbacks match the defaults in memoir/config.py, so app + DB agree.
+# fallbacks match the defaults in backend/app/config.py, so app + DB agree.
 #
 # For prod-shaped overrides, set MEMOIR_* in .env (see .env.example).
 
