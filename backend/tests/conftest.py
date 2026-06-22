@@ -92,8 +92,8 @@ def api_client(engine: Engine, db_session: Session) -> Iterator:
     """
     from fastapi.testclient import TestClient
 
-    from app.api import app
     from app.api.deps import get_db
+    from app.main import app
 
     factory = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 

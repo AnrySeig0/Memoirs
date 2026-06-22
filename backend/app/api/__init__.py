@@ -8,7 +8,8 @@ không có path nào sửa claim mà không có audit.
 Merge và supersede không nằm trong M3 (merge ↔ M5 cùng dedup candidates;
 supersede ↔ M4 correction flow). `review_log.action` đã CHECK 6 giá trị
 trong DB để M4/M5 ghi đè vào cùng audit table không cần migration mới.
-"""
-from app.api.app import app, create_app
 
-__all__ = ["app", "create_app"]
+The app factory now lives in `app.main` (`create_app`); the aggregated
+router is assembled in `app.api.router`. Import the app via
+`from app.main import app`.
+"""
