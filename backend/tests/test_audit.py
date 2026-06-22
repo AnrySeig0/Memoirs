@@ -16,7 +16,7 @@ import uuid
 
 from sqlalchemy import text as sa_text
 
-from app.ingest import Turn, ingest_text_transcript
+from app.services.ingest import Turn, ingest_text_transcript
 from app.store import (
     accept_claim,
     audit_provenance,
@@ -26,7 +26,7 @@ from app.store import (
     set_claim_embedding,
     supersede_claim,
 )
-from app.resolve import DeterministicEmbedder
+from app.services.resolve import DeterministicEmbedder
 
 
 def _claim_in(db_session, subject_id, session_no, text):

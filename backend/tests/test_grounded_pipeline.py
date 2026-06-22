@@ -10,9 +10,9 @@ import uuid
 
 from sqlalchemy import select, func
 
-from app.extract import RuleExtractor
-from app.ingest import Turn, ingest_text_transcript
-from app.segment import segment_by_utterance
+from app.services.extract import RuleExtractor
+from app.services.ingest import Turn, ingest_text_transcript
+from app.services.segment import segment_by_utterance
 from app.store import Claim, ClaimSource, Utterance, insert_claim_with_sources
 
 

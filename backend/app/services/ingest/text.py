@@ -17,7 +17,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session as OrmSession
 
-from app.ingest.types import Turn
+from app.services.ingest.types import Turn
 from app.repositories.source import insert_session, insert_source, insert_utterance
 
 TURN_SEPARATOR = "\n"

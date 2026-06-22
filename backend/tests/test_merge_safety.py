@@ -21,8 +21,8 @@ import uuid
 
 from sqlalchemy import func, select
 
-from app.ingest import Turn, ingest_text_transcript
-from app.resolve import DeterministicEmbedder, find_merge_candidates
+from app.services.ingest import Turn, ingest_text_transcript
+from app.services.resolve import DeterministicEmbedder, find_merge_candidates
 from app.store import (
     Claim,
     ReviewLog,

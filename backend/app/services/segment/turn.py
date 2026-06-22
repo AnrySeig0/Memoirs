@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from app.segment.types import Segment
+from app.services.segment.types import Segment
 from app.db.models import Utterance
 
 

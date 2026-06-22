@@ -16,7 +16,7 @@ not byte-level matching, so "Đà Nẵng" is recognized as a single token.
 import re
 from typing import Protocol, runtime_checkable
 
-from app.resolve.types import EntityRef
+from app.services.resolve.types import EntityRef
 
 # Suggested ontology — soft, not enforced anywhere.
 CANONICAL_ENTITY_KINDS: tuple[str, ...] = ("date", "person", "place", "org")

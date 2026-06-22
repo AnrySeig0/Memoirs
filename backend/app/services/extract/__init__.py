@@ -10,10 +10,10 @@ write.
 used in tests and as a safety floor; `LLMExtractor` is a stub for the
 follow-up LLM integration (Instructor/vLLM per §5).
 """
-from app.extract.base import Extractor
-from app.extract.llm import LLMExtractor
-from app.extract.rule import RULE_EXTRACTOR_CONFIDENCE, RuleExtractor
-from app.extract.types import CANONICAL_CLAIM_TYPES, ExtractedClaim
+from app.services.extract.base import Extractor
+from app.services.extract.llm import LLMExtractor
+from app.services.extract.rule import RULE_EXTRACTOR_CONFIDENCE, RuleExtractor
+from app.services.extract.types import CANONICAL_CLAIM_TYPES, ExtractedClaim
 
 __all__ = [
     "CANONICAL_CLAIM_TYPES",

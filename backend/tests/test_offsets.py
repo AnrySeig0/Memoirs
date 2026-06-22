@@ -6,7 +6,7 @@ fixture.
 """
 import uuid
 
-from app.ingest import Turn, normalized_transcript
+from app.services.ingest import Turn, normalized_transcript
 
 
 def test_vietnamese_diacritics_roundtrip() -> None:
@@ -39,7 +39,7 @@ def test_offset_codepoint_not_byte() -> None:
 
 
 def test_empty_turns_rejected() -> None:
-    from app.ingest.text import ingest_text_transcript
+    from app.services.ingest.text import ingest_text_transcript
 
     # We deliberately call without a db_session — empty turns are caught
     # before the DB is touched, so a None placeholder is fine.

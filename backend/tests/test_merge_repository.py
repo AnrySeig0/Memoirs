@@ -11,7 +11,7 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from app.ingest import Turn, ingest_text_transcript
+from app.services.ingest import Turn, ingest_text_transcript
 from app.store import (
     Claim,
     ClaimNotFound,

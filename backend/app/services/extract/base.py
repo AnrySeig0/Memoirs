@@ -1,7 +1,7 @@
 from typing import Protocol, runtime_checkable
 
-from app.extract.types import ExtractedClaim
-from app.segment.types import Segment
+from app.services.extract.types import ExtractedClaim
+from app.services.segment.types import Segment
 
 
 @runtime_checkable

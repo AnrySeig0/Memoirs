@@ -13,7 +13,7 @@ import uuid
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session as OrmSession
 
-from app.resolve.types import MergeCandidate
+from app.services.resolve.types import MergeCandidate
 
 DEFAULT_THRESHOLD = 0.85
 DEFAULT_LIMIT = 50

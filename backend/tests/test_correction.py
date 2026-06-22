@@ -9,7 +9,7 @@ old claim's TEXT does not move — drift becomes visible, not silent.
 """
 import uuid
 
-from app.ingest import Turn, ingest_text_transcript
+from app.services.ingest import Turn, ingest_text_transcript
 from app.store import (
     Claim,
     ClaimNotFound,

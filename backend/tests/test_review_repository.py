@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import select, text as sa_text
 from sqlalchemy.exc import IntegrityError
 
-from app.ingest import Turn, ingest_text_transcript
+from app.services.ingest import Turn, ingest_text_transcript
 from app.store import (
     Claim,
     ClaimNotFound,

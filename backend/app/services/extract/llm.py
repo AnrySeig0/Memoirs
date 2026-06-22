@@ -21,8 +21,8 @@ import instructor
 from openai import OpenAI
 
 from app.core.config import get_settings
-from app.extract.types import CANONICAL_CLAIM_TYPES, ExtractedClaim
-from app.segment.types import Segment
+from app.services.extract.types import CANONICAL_CLAIM_TYPES, ExtractedClaim
+from app.services.segment.types import Segment
 
 SYSTEM_PROMPT = (
     "You extract atomic claims from a single segment of a memoir interview.\n"

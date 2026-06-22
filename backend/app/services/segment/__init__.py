@@ -8,7 +8,7 @@ M2 ships identity segmentation (1 utterance = 1 segment). A
 step but doesn't change the M2 grounding contract — `Segment` already
 carries the list of source `utterance_ids`.
 """
-from app.segment.turn import segment_by_utterance
-from app.segment.types import Segment
+from app.services.segment.turn import segment_by_utterance
+from app.services.segment.types import Segment
 
 __all__ = ["Segment", "segment_by_utterance"]

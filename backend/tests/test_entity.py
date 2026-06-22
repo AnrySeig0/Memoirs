@@ -3,8 +3,8 @@ import uuid
 
 import pytest
 
-from app.ingest import Turn, ingest_text_transcript
-from app.resolve import EntityLinker, EntityRef, RuleEntityLinker
+from app.services.ingest import Turn, ingest_text_transcript
+from app.services.resolve import EntityLinker, EntityRef, RuleEntityLinker
 from app.store import (
     Entity,
     get_or_create_entity,

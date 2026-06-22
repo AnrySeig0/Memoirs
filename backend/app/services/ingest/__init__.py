@@ -5,13 +5,13 @@ Text-only: vẫn phải gán char_start/char_end + speaker.
 
 Offsets sử dụng Unicode codepoint nhất quán (Python `len(str)`).
 """
-from app.ingest.text import (
+from app.services.ingest.text import (
     IngestResult,
     TURN_SEPARATOR,
     ingest_text_transcript,
     normalized_transcript,
 )
-from app.ingest.types import Turn
+from app.services.ingest.types import Turn
 
 __all__ = [
     "IngestResult",

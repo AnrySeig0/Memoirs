@@ -4,7 +4,7 @@ import math
 import numpy as np
 import pytest
 
-from app.resolve import DeterministicEmbedder
+from app.services.resolve import DeterministicEmbedder
 from app.store import EMBEDDING_DIM
 
 
@@ -44,6 +44,6 @@ def test_different_text_gives_low_similarity() -> None:
 
 
 def test_embedder_satisfies_protocol_structurally() -> None:
-    from app.resolve import Embedder
+    from app.services.resolve import Embedder
 
     assert isinstance(DeterministicEmbedder(), Embedder)

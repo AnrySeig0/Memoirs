@@ -13,8 +13,8 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.config import get_settings
-from app.extract import ExtractedClaim, Extractor, LLMExtractor, RuleExtractor
-from app.segment import Segment
+from app.services.extract import ExtractedClaim, Extractor, LLMExtractor, RuleExtractor
+from app.services.segment import Segment
 
 
 def _segment(text: str) -> Segment:

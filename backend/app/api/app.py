@@ -7,6 +7,7 @@ same endpoints.
 """
 from fastapi import FastAPI
 
+from app.api.exception_handlers import register_exception_handlers
 from app.api.routes.claims import router as claims_router
 
 
@@ -20,6 +21,7 @@ def create_app() -> FastAPI:
         ),
         version="0.3.0",
     )
+    register_exception_handlers(app)
     app.include_router(claims_router)
 
     @app.get("/healthz", tags=["meta"])

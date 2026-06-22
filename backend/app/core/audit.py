@@ -85,7 +85,7 @@ def _reconstruct_session_transcript(db: OrmSession, session_id: uuid.UUID) -> st
     avoid a circular dep (memoir.ingest.text imports the repository,
     which lives next to this module).
     """
-    from app.ingest.text import TURN_SEPARATOR
+    from app.services.ingest.text import TURN_SEPARATOR
 
     rows = db.execute(
         select(Utterance.text)

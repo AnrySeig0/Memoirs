@@ -16,8 +16,8 @@ That is the entire policy. No date arithmetic, no entity guessing.
 """
 import re
 
-from app.extract.types import ExtractedClaim
-from app.segment.types import Segment
+from app.services.extract.types import ExtractedClaim
+from app.services.segment.types import Segment
 
 _YEAR_PATTERN = re.compile(r"\b(?:19|20)\d{2}\b")
 RULE_EXTRACTOR_CONFIDENCE = 0.5
