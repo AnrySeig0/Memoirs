@@ -17,7 +17,7 @@ import pytest
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.config import get_settings
+from app.core.config import get_settings
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 

@@ -6,7 +6,7 @@ every M1–M5 invariant holds for this specific claim.
 
 The audit is deliberately a SELECT-only function. It NEVER writes —
 running it on production traffic costs reads and nothing else. The
-function lives in `memoir.store` rather than `tests/` because it's the
+function lives in `app.core.audit` rather than `tests/` because it's the
 same query an operator would issue to verify data quality on a live
 deployment.
 
@@ -46,7 +46,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from app.store.models import (
+from app.db.models import (
     Claim,
     ClaimSource,
     ReviewLog,

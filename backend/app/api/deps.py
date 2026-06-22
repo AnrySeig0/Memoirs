@@ -10,7 +10,7 @@ from functools import lru_cache
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import sessionmaker
 
-from app.store.db import get_engine
+from app.db.session import get_engine
 
 
 @lru_cache

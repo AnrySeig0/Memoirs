@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
 from app.segment.types import Segment
-from app.store.models import Utterance
+from app.db.models import Utterance
 
 
 def segment_by_utterance(db: OrmSession, session_id: uuid.UUID) -> Iterator[Segment]:

@@ -20,7 +20,7 @@ import uuid
 import instructor
 from openai import OpenAI
 
-from app.config import get_settings
+from app.core.config import get_settings
 from app.extract.types import CANONICAL_CLAIM_TYPES, ExtractedClaim
 from app.segment.types import Segment
 

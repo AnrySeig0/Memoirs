@@ -227,7 +227,7 @@ def build_realistic_corpus(
     }
     # Anything not allocated stays pending.
 
-    from app.store.models import Claim
+    from app.db.models import Claim
     from sqlalchemy import select
 
     def _partner_for(

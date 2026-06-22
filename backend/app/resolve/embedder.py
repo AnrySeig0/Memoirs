@@ -17,7 +17,7 @@ from typing import Protocol, runtime_checkable
 
 import numpy as np
 
-from app.store.models import EMBEDDING_DIM
+from app.db.models import EMBEDDING_DIM
 
 
 @runtime_checkable

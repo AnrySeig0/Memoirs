@@ -12,7 +12,7 @@ import uuid
 import pytest
 from pydantic import ValidationError
 
-from app.config import get_settings
+from app.core.config import get_settings
 from app.extract import ExtractedClaim, Extractor, LLMExtractor, RuleExtractor
 from app.segment import Segment
 

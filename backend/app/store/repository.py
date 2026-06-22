@@ -18,7 +18,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from app.store.models import (
+from app.db.models import (
     EMBEDDING_DIM,
     Claim,
     ClaimEntity,
@@ -26,8 +26,8 @@ from app.store.models import (
     Entity,
     ReviewLog,
 )
-from app.store.models import Session as SessionRow
-from app.store.models import Source, Utterance
+from app.db.models import Session as SessionRow
+from app.db.models import Source, Utterance
 
 VALID_CLAIM_STATUSES = frozenset(
     {"pending", "accepted", "rejected", "edited", "flagged", "superseded"}
