@@ -1,13 +1,18 @@
-"""Insert-only repository for the M1 substrate + M2 grounded claims.
-
-`utterances` and `claim_sources` expose no update/delete by design —
-append-only is enforced both here (no API) and at the DB layer (Postgres
-triggers).
+"""Repository for grounded claims + the M3/M4/M5 review lifecycle.
 
 The M2 contract for `insert_claim_with_sources` is the load-bearing one:
-a claim without ≥1 source utterance cannot reach the DB, because the
-claim row and its `claim_sources` rows are written in the same
-transaction by a single function.
+a claim without ≥1 source utterance cannot reach the DB, because the claim
+row and its `claim_sources` rows are written in the same transaction by a
+single function.
+
+Exceptions
+----------
+- `ClaimNotFound` (404) — the claim id does not resolve.
+- `ClaimLifecycleError` (422) — a well-formed request that violates a claim
+  invariant (e.g. editing a superseded claim, supersede across subjects).
+  It subclasses both `ValidationError` (so the API handler returns 422) and
+  `ValueError` (so existing call sites / tests that expect a `ValueError`
+  keep working).
 """
 import uuid
 from collections.abc import Sequence
@@ -18,103 +23,29 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from app.db.models import (
-    EMBEDDING_DIM,
-    Claim,
-    ClaimEntity,
-    ClaimSource,
-    Entity,
-    ReviewLog,
-)
-from app.db.models import Session as SessionRow
-from app.db.models import Source, Utterance
+from app.core.exceptions import NotFoundError, ValidationError
+from app.db.models import EMBEDDING_DIM, Claim, ClaimSource, ReviewLog
+from app.repositories.review_log import VALID_REVIEW_ACTIONS, insert_review_log
 
 VALID_CLAIM_STATUSES = frozenset(
     {"pending", "accepted", "rejected", "edited", "flagged", "superseded"}
 )
 
-VALID_REVIEW_ACTIONS = frozenset(
-    {"accept", "reject", "edit", "flag", "merge", "supersede"}
-)
+
+class ClaimNotFound(NotFoundError):
+    """The claim id does not resolve — the API layer returns 404."""
 
 
-class ClaimNotFound(LookupError):
-    """Repo signal that the caller (likely an API handler) should translate
-    into a 404. Distinct from `ValueError` so the API layer can pick the
-    right HTTP status.
+class ClaimLifecycleError(ValidationError, ValueError):
+    """A claim invariant was violated by a well-formed request (422).
+
+    Also a `ValueError` so call sites that historically caught `ValueError`
+    (and the repository tests) continue to work unchanged.
     """
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def insert_source(
-    db: OrmSession,
-    *,
-    subject_id: uuid.UUID,
-    kind: str,
-    storage_uri: str,
-) -> Source:
-    if kind not in {"audio", "text"}:
-        raise ValueError(f"kind must be 'audio' or 'text', got {kind!r}")
-    row = Source(subject_id=subject_id, kind=kind, storage_uri=storage_uri)
-    db.add(row)
-    db.flush()
-    return row
-
-
-def insert_session(
-    db: OrmSession,
-    *,
-    subject_id: uuid.UUID,
-    source_id: uuid.UUID,
-    session_no: int,
-    recorded_at: datetime | None = None,
-) -> SessionRow:
-    row = SessionRow(
-        subject_id=subject_id,
-        source_id=source_id,
-        session_no=session_no,
-        recorded_at=recorded_at,
-    )
-    db.add(row)
-    db.flush()
-    return row
-
-
-def insert_utterance(
-    db: OrmSession,
-    *,
-    session_id: uuid.UUID,
-    speaker: str,
-    text: str,
-    char_start: int,
-    char_end: int,
-    ts_start_ms: int | None = None,
-    ts_end_ms: int | None = None,
-) -> Utterance:
-    if char_start < 0 or char_end < char_start:
-        raise ValueError(
-            f"invalid utterance offsets: char_start={char_start}, char_end={char_end}"
-        )
-    if char_end - char_start != len(text):
-        raise ValueError(
-            "utterance offset span does not match codepoint length of text "
-            f"(end-start={char_end - char_start}, len(text)={len(text)})"
-        )
-    row = Utterance(
-        session_id=session_id,
-        speaker=speaker,
-        text=text,
-        char_start=char_start,
-        char_end=char_end,
-        ts_start_ms=ts_start_ms,
-        ts_end_ms=ts_end_ms,
-    )
-    db.add(row)
-    db.flush()
-    return row
 
 
 def insert_claim_with_sources(
@@ -140,13 +71,13 @@ def insert_claim_with_sources(
     claim row would otherwise dangle without sources.
     """
     if not source_utterance_ids:
-        raise ValueError(
+        raise ClaimLifecycleError(
             "claim requires at least one source utterance (M2 grounding rule)"
         )
     if not 0.0 <= confidence <= 1.0:
-        raise ValueError(f"confidence must be in [0,1], got {confidence}")
+        raise ClaimLifecycleError(f"confidence must be in [0,1], got {confidence}")
     if status not in VALID_CLAIM_STATUSES:
-        raise ValueError(
+        raise ClaimLifecycleError(
             f"status must be one of {sorted(VALID_CLAIM_STATUSES)}, got {status!r}"
         )
     # Dedup defensive — passing the same utterance twice would violate the
@@ -201,15 +132,15 @@ def _record_review(
     payload: dict[str, Any] | None = None,
 ) -> tuple[Claim, ReviewLog]:
     if action not in VALID_REVIEW_ACTIONS:
-        raise ValueError(
+        raise ClaimLifecycleError(
             f"action must be one of {sorted(VALID_REVIEW_ACTIONS)}, got {action!r}"
         )
     if new_status not in VALID_CLAIM_STATUSES:
-        raise ValueError(
+        raise ClaimLifecycleError(
             f"status must be one of {sorted(VALID_CLAIM_STATUSES)}, got {new_status!r}"
         )
     if not actor or not actor.strip():
-        raise ValueError("actor must not be empty")
+        raise ClaimLifecycleError("actor must not be empty")
 
     now = _utcnow()
     claim.status = new_status
@@ -217,16 +148,16 @@ def _record_review(
     claim.reviewed_by = actor
     db.flush()
 
-    log = ReviewLog(claim_id=claim.id, action=action, payload=payload, actor=actor)
-    db.add(log)
-    db.flush()
+    log = insert_review_log(
+        db, claim_id=claim.id, action=action, actor=actor, payload=payload
+    )
     return claim, log
 
 
 def accept_claim(db: OrmSession, *, claim_id: uuid.UUID, actor: str) -> Claim:
     claim = _load_claim_or_raise(db, claim_id)
     if claim.status == "superseded":
-        raise ValueError(
+        raise ClaimLifecycleError(
             "cannot accept a superseded claim — its successor carries the "
             "current narrative (M4 supersede flow)"
         )
@@ -264,10 +195,10 @@ def edit_claim(
     new_text: str,
 ) -> Claim:
     if not new_text or not new_text.strip():
-        raise ValueError("new_text must not be empty")
+        raise ClaimLifecycleError("new_text must not be empty")
     claim = _load_claim_or_raise(db, claim_id)
     if claim.status == "superseded":
-        raise ValueError(
+        raise ClaimLifecycleError(
             "cannot edit a superseded claim — use the M4 supersede flow to "
             "add a new claim instead of mutating the historic one"
         )
@@ -356,29 +287,29 @@ def supersede_claim(
 
     Raises:
         ClaimNotFound: if either id does not resolve.
-        ValueError: if a supersede invariant is violated. The API layer
-            should translate this into 422.
+        ClaimLifecycleError: if a supersede invariant is violated. The API
+            layer translates this into 422.
     """
     if not actor or not actor.strip():
-        raise ValueError("actor must not be empty")
+        raise ClaimLifecycleError("actor must not be empty")
     if old_id == new_id:
-        raise ValueError("cannot supersede a claim with itself")
+        raise ClaimLifecycleError("cannot supersede a claim with itself")
 
     old = _load_claim_or_raise(db, old_id)
     new = _load_claim_or_raise(db, new_id)
 
     if old.subject_id != new.subject_id:
-        raise ValueError(
+        raise ClaimLifecycleError(
             "cannot supersede across subjects — old and new claims belong "
             "to different subjects"
         )
     if old.status == "superseded":
-        raise ValueError(
+        raise ClaimLifecycleError(
             f"claim {old_id} is already superseded — supersede the leaf of "
             "its chain instead (use claim_history to find it)"
         )
     if new.status == "superseded":
-        raise ValueError(
+        raise ClaimLifecycleError(
             f"new claim {new_id} is itself superseded — pick a live "
             "successor"
         )
@@ -389,7 +320,7 @@ def supersede_claim(
         select(Claim.id).where(Claim.superseded_by == new.id)
     ).scalar_one_or_none()
     if existing_predecessor is not None:
-        raise ValueError(
+        raise ClaimLifecycleError(
             f"new claim {new_id} is already the successor of claim "
             f"{existing_predecessor} — many-to-one supersede is a merge "
             "operation and belongs to M5"
@@ -503,79 +434,18 @@ def set_claim_embedding(
     in dedup queries, and the dedup SQL filters them out anyway.
     """
     if len(vector) != EMBEDDING_DIM:
-        raise ValueError(
+        raise ClaimLifecycleError(
             f"embedding must be {EMBEDDING_DIM}-dim, got {len(vector)}"
         )
     claim = _load_claim_or_raise(db, claim_id)
     if claim.status == "superseded":
-        raise ValueError(
+        raise ClaimLifecycleError(
             "cannot embed a superseded claim — its successor is what "
             "should appear in dedup candidates"
         )
     claim.embedding = list(vector)
     db.flush()
     return claim
-
-
-def get_or_create_entity(
-    db: OrmSession,
-    *,
-    subject_id: uuid.UUID,
-    kind: str,
-    canonical: str,
-) -> Entity:
-    """Idempotent on (subject_id, kind, canonical) — the unique index in
-    migration 0005 makes this safe to call repeatedly.
-    """
-    if not kind or not canonical:
-        raise ValueError("entity kind and canonical must be non-empty")
-    existing = db.execute(
-        select(Entity).where(
-            Entity.subject_id == subject_id,
-            Entity.kind == kind,
-            Entity.canonical == canonical,
-        )
-    ).scalar_one_or_none()
-    if existing is not None:
-        return existing
-    row = Entity(subject_id=subject_id, kind=kind, canonical=canonical)
-    db.add(row)
-    db.flush()
-    return row
-
-
-def link_claim_to_entities(
-    db: OrmSession,
-    *,
-    claim_id: uuid.UUID,
-    entity_ids: Sequence[uuid.UUID],
-) -> int:
-    """Attach entities to a claim. Idempotent: existing links are skipped.
-
-    Returns the number of NEW links created. Useful as a smoke check —
-    repeated calls with the same arguments return 0 after the first.
-    """
-    if not entity_ids:
-        return 0
-    _load_claim_or_raise(db, claim_id)
-    unique_ids = list(dict.fromkeys(entity_ids))
-    existing = set(
-        db.execute(
-            select(ClaimEntity.entity_id).where(
-                ClaimEntity.claim_id == claim_id,
-                ClaimEntity.entity_id.in_(unique_ids),
-            )
-        ).scalars()
-    )
-    created = 0
-    for entity_id in unique_ids:
-        if entity_id in existing:
-            continue
-        db.add(ClaimEntity(claim_id=claim_id, entity_id=entity_id))
-        created += 1
-    if created:
-        db.flush()
-    return created
 
 
 def merge_claim(
@@ -608,27 +478,27 @@ def merge_claim(
       - similarity, if provided, is in [-1, 1]
     """
     if not actor or not actor.strip():
-        raise ValueError("actor must not be empty")
+        raise ClaimLifecycleError("actor must not be empty")
     if loser_id == winner_id:
-        raise ValueError("cannot merge a claim with itself")
+        raise ClaimLifecycleError("cannot merge a claim with itself")
     if similarity is not None and not -1.0 <= similarity <= 1.0:
-        raise ValueError(f"similarity must be in [-1, 1], got {similarity}")
+        raise ClaimLifecycleError(f"similarity must be in [-1, 1], got {similarity}")
 
     loser = _load_claim_or_raise(db, loser_id)
     winner = _load_claim_or_raise(db, winner_id)
 
     if loser.subject_id != winner.subject_id:
-        raise ValueError(
+        raise ClaimLifecycleError(
             "cannot merge across subjects — loser and winner belong to "
             "different subjects"
         )
     if loser.status == "superseded":
-        raise ValueError(
+        raise ClaimLifecycleError(
             f"claim {loser_id} is already superseded — merging a historic "
             "claim has no editorial meaning; merge the leaf of its chain"
         )
     if winner.status == "superseded":
-        raise ValueError(
+        raise ClaimLifecycleError(
             f"winner {winner_id} is itself superseded — pick a live target"
         )
 

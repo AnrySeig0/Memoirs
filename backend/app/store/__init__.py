@@ -31,31 +31,30 @@ from app.db.models import (
     Utterance,
 )
 from app.db.session import get_engine, session_scope
-from app.store.repository import (
+from app.repositories.claim import (
     VALID_CLAIM_STATUSES,
-    VALID_REVIEW_ACTIONS,
+    ClaimLifecycleError,
     ClaimNotFound,
     HistoryEntry,
     accept_claim,
     claim_history,
     edit_claim,
     flag_claim,
-    get_or_create_entity,
     insert_claim_with_sources,
-    insert_session,
-    insert_source,
-    insert_utterance,
-    link_claim_to_entities,
     merge_claim,
     reject_claim,
     set_claim_embedding,
     supersede_claim,
 )
+from app.repositories.entity import get_or_create_entity, link_claim_to_entities
+from app.repositories.review_log import VALID_REVIEW_ACTIONS
+from app.repositories.source import insert_session, insert_source, insert_utterance
 
 __all__ = [
     "Base",
     "Claim",
     "ClaimEntity",
+    "ClaimLifecycleError",
     "ClaimNotFound",
     "ClaimSource",
     "EMBEDDING_DIM",
