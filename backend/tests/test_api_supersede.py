@@ -2,7 +2,7 @@
 import uuid
 
 from app.services.ingest import Turn, ingest_text_transcript
-from app.store import insert_claim_with_sources
+from app.repositories.claim import insert_claim_with_sources
 
 
 def _pair(db_session) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:

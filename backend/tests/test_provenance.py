@@ -17,7 +17,8 @@ import random
 
 from sqlalchemy import select
 
-from app.store import Claim, audit_provenance
+from app.db.models import Claim
+from app.core.audit import audit_provenance
 
 from tests.fixtures.corpus import build_realistic_corpus
 

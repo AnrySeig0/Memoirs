@@ -11,10 +11,7 @@ import pytest
 
 from app.services.ingest import Turn, ingest_text_transcript
 from app.services.resolve import DeterministicEmbedder, find_merge_candidates
-from app.store import (
-    insert_claim_with_sources,
-    set_claim_embedding,
-)
+from app.repositories.claim import insert_claim_with_sources, set_claim_embedding
 
 
 def _claim(db_session, subject_id, text, *, status="pending", session_no=None) -> uuid.UUID:
@@ -81,7 +78,7 @@ def test_unrelated_texts_do_not_surface(db_session) -> None:
 
 def test_superseded_claims_excluded(db_session) -> None:
     """A merged-away claim must not reappear as a candidate."""
-    from app.store import merge_claim
+    from app.repositories.claim import merge_claim
 
     subject_id = uuid.uuid4()
     a = _claim(db_session, subject_id, "Subject moved to Detroit in 1962.")
@@ -133,7 +130,7 @@ def test_results_are_per_subject(db_session) -> None:
     assert len(s1_pairs) == 1
     assert len(s2_pairs) == 1
     # No cross-subject leakage — ids in each list belong to that subject only.
-    from app.store import Claim
+    from app.db.models import Claim
 
     for pair in s1_pairs:
         assert db_session.get(Claim, pair.claim_a_id).subject_id == s1

@@ -26,7 +26,7 @@ from app.schemas.claim import (
 )
 from app.schemas.review import ReviewLogOut
 from app.services.resolve import DEFAULT_THRESHOLD
-from app.store import VALID_CLAIM_STATUSES
+from app.repositories.claim import VALID_CLAIM_STATUSES
 
 router = APIRouter(prefix="/claims", tags=["claims"])
 

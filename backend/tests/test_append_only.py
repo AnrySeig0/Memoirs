@@ -13,7 +13,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
 from app.services.ingest import Turn, ingest_text_transcript
-from app.store import Utterance
+from app.db.models import Utterance
 
 
 def test_text_ingest_roundtrip(db_session) -> None:

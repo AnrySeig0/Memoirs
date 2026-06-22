@@ -5,12 +5,9 @@ import pytest
 
 from app.services.ingest import Turn, ingest_text_transcript
 from app.services.resolve import EntityLinker, EntityRef, RuleEntityLinker
-from app.store import (
-    Entity,
-    get_or_create_entity,
-    insert_claim_with_sources,
-    link_claim_to_entities,
-)
+from app.db.models import Entity
+from app.repositories.claim import insert_claim_with_sources
+from app.repositories.entity import get_or_create_entity, link_claim_to_entities
 
 
 # --- pure unit -------------------------------------------------------------

@@ -27,16 +27,7 @@ from app.services.extract import RuleExtractor
 from app.services.ingest import Turn, ingest_text_transcript
 from app.services.resolve import DeterministicEmbedder
 from app.services.segment import segment_by_utterance
-from app.store import (
-    accept_claim,
-    edit_claim,
-    flag_claim,
-    insert_claim_with_sources,
-    merge_claim,
-    reject_claim,
-    set_claim_embedding,
-    supersede_claim,
-)
+from app.repositories.claim import accept_claim, edit_claim, flag_claim, insert_claim_with_sources, merge_claim, reject_claim, set_claim_embedding, supersede_claim
 
 
 @dataclass(frozen=True)

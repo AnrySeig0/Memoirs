@@ -23,13 +23,8 @@ from sqlalchemy import func, select
 
 from app.services.ingest import Turn, ingest_text_transcript
 from app.services.resolve import DeterministicEmbedder, find_merge_candidates
-from app.store import (
-    Claim,
-    ReviewLog,
-    insert_claim_with_sources,
-    merge_claim,
-    set_claim_embedding,
-)
+from app.db.models import Claim, ReviewLog
+from app.repositories.claim import insert_claim_with_sources, merge_claim, set_claim_embedding
 
 
 def _snapshot(db_session) -> dict[str, int]:

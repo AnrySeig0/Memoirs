@@ -13,7 +13,8 @@ from sqlalchemy import select, func
 from app.services.extract import RuleExtractor
 from app.services.ingest import Turn, ingest_text_transcript
 from app.services.segment import segment_by_utterance
-from app.store import Claim, ClaimSource, Utterance, insert_claim_with_sources
+from app.db.models import Claim, ClaimSource, Utterance
+from app.repositories.claim import insert_claim_with_sources
 
 
 def test_no_orphan_claims_after_full_pipeline(db_session) -> None:

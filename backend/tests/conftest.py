@@ -85,14 +85,14 @@ def db_session(engine: Engine) -> Iterator[Session]:
 def api_client(engine: Engine, db_session: Session) -> Iterator:
     """FastAPI TestClient bound to the same engine as `db_session`.
 
-    The handler-side dependency `get_db` is overridden to yield a fresh
-    session per request from the test engine. We share the engine, NOT
+    The handler-side dependency `get_db_session` is overridden to yield a
+    fresh session per request from the test engine. We share the engine, NOT
     the session — handlers commit on their own sessions, then `db_session`
     sees those commits because both speak to the same Postgres.
     """
     from fastapi.testclient import TestClient
 
-    from app.api.deps import get_db
+    from app.db.session import get_db_session
     from app.main import app
 
     factory = sessionmaker(bind=engine, expire_on_commit=False, future=True)
@@ -108,7 +108,7 @@ def api_client(engine: Engine, db_session: Session) -> Iterator:
         finally:
             s.close()
 
-    app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_db_session] = _override_get_db
     try:
         with TestClient(app) as client:
             yield client

@@ -10,13 +10,8 @@ old claim's TEXT does not move — drift becomes visible, not silent.
 import uuid
 
 from app.services.ingest import Turn, ingest_text_transcript
-from app.store import (
-    Claim,
-    ClaimNotFound,
-    claim_history,
-    insert_claim_with_sources,
-    supersede_claim,
-)
+from app.db.models import Claim
+from app.repositories.claim import ClaimNotFound, claim_history, insert_claim_with_sources, supersede_claim
 
 
 def test_correction_preserves_old_and_traces_history(db_session) -> None:

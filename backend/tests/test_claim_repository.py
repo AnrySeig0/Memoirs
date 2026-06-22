@@ -12,7 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.services.ingest import Turn, ingest_text_transcript
-from app.store import Claim, ClaimSource, insert_claim_with_sources
+from app.db.models import Claim, ClaimSource
+from app.repositories.claim import insert_claim_with_sources
 
 
 def test_empty_source_list_rejected_before_db(db_session) -> None:

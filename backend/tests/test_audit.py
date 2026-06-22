@@ -17,15 +17,8 @@ import uuid
 from sqlalchemy import text as sa_text
 
 from app.services.ingest import Turn, ingest_text_transcript
-from app.store import (
-    accept_claim,
-    audit_provenance,
-    edit_claim,
-    insert_claim_with_sources,
-    merge_claim,
-    set_claim_embedding,
-    supersede_claim,
-)
+from app.core.audit import audit_provenance
+from app.repositories.claim import accept_claim, edit_claim, insert_claim_with_sources, merge_claim, set_claim_embedding, supersede_claim
 from app.services.resolve import DeterministicEmbedder
 
 

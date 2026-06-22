@@ -12,13 +12,8 @@ import pytest
 from sqlalchemy import select
 
 from app.services.ingest import Turn, ingest_text_transcript
-from app.store import (
-    Claim,
-    ClaimNotFound,
-    ReviewLog,
-    insert_claim_with_sources,
-    merge_claim,
-)
+from app.db.models import Claim, ReviewLog
+from app.repositories.claim import ClaimNotFound, insert_claim_with_sources, merge_claim
 
 
 def _claim_in(db_session, subject_id, session_no, text, *, status="pending") -> Claim:
@@ -170,7 +165,7 @@ def test_supersede_path_still_strict_after_m5(db_session) -> None:
     """Sanity: M4 supersede keeps its 1:1 invariant — merge is the
     deliberately-relaxed path, not a backdoor weakening of supersede.
     """
-    from app.store import supersede_claim
+    from app.repositories.claim import supersede_claim
 
     subject_id = uuid.uuid4()
     old1 = _claim_in(db_session, subject_id, 1, "x1")

@@ -16,16 +16,8 @@ from sqlalchemy import select, text as sa_text
 from sqlalchemy.exc import IntegrityError
 
 from app.services.ingest import Turn, ingest_text_transcript
-from app.store import (
-    Claim,
-    ClaimNotFound,
-    ReviewLog,
-    accept_claim,
-    edit_claim,
-    flag_claim,
-    insert_claim_with_sources,
-    reject_claim,
-)
+from app.db.models import Claim, ReviewLog
+from app.repositories.claim import ClaimNotFound, accept_claim, edit_claim, flag_claim, insert_claim_with_sources, reject_claim
 
 
 def _seed_claim(db_session, *, status: str = "pending") -> tuple[uuid.UUID, uuid.UUID]:
@@ -154,7 +146,7 @@ def test_edit_on_superseded_refused(db_session) -> None:
     status='superseded' but superseded_by NULL). Set up the chain then
     confirm `edit` on the historic claim is refused.
     """
-    from app.store import supersede_claim
+    from app.repositories.claim import supersede_claim
 
     subject_id, old_id = _seed_claim(db_session)
     # A second claim to serve as the successor.

@@ -10,14 +10,8 @@ from sqlalchemy import select, text as sa_text
 from sqlalchemy.exc import IntegrityError
 
 from app.services.ingest import Turn, ingest_text_transcript
-from app.store import (
-    Claim,
-    ClaimNotFound,
-    ReviewLog,
-    claim_history,
-    insert_claim_with_sources,
-    supersede_claim,
-)
+from app.db.models import Claim, ReviewLog
+from app.repositories.claim import ClaimNotFound, claim_history, insert_claim_with_sources, supersede_claim
 
 
 def _pair(db_session, *, same_subject: bool = True) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:

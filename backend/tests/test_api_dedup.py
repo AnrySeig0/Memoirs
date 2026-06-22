@@ -3,7 +3,7 @@ import uuid
 
 from app.services.ingest import Turn, ingest_text_transcript
 from app.services.resolve import DeterministicEmbedder
-from app.store import insert_claim_with_sources, set_claim_embedding
+from app.repositories.claim import insert_claim_with_sources, set_claim_embedding
 
 
 def _seed_pair(db_session) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:

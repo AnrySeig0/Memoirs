@@ -322,31 +322,34 @@ cd backend && uv run pytest                                            # backend
 ```
 memoir-engine/
 ├── README.md
-├── docker-compose.yml          # postgres+pgvector, minio, redis (repo root)
-├── ui/                         # React (hoặc Streamlit prototype) — frontend placeholder
-├── docs/                       # design + plan refactor
-└── backend/                    # toàn bộ Python backend (theo ai_agent_template)
+├── docker-compose.yml              # postgres+pgvector, minio, redis (repo root)
+├── ui/                             # React (hoặc Streamlit prototype) — frontend placeholder
+├── docs/                           # design, db schema, howto/, plan refactor
+├── .claude/rules/                  # architecture · code-style · testing
+└── backend/                        # toàn bộ Python backend (theo ai_agent_template)
     ├── pyproject.toml, uv.lock, .env.example
-    ├── alembic/                # migrations cho schema mục 4
-    ├── main.py                 # entrypoint: `uvicorn main:app`
-    ├── app/
-    │   ├── ingest/             # Step 1-2: ASR, diarization, ghi substrate
-    │   ├── segment/            # Step 3: chunking giữ offset
-    │   ├── extract/            # Step 4: LLM + schema (Outlines/Instructor)
-    │   ├── resolve/            # Step 5-6: embedding, dedup, entity
-    │   ├── store/              # models, repository, ràng buộc grounding
-    │   ├── api/                # FastAPI cho Review UI
-    │   └── worker/             # Celery/Prefect jobs
-    └── tests/
-        ├── test_provenance.py  # 100% truy vết
-        ├── test_correction.py  # supersede không mất dữ liệu
-        └── test_merge_safety.py # không auto-commit merge
+    ├── alembic/                    # migrations cho schema mục 4
+    ├── main.py                     # shim: `uvicorn main:app`
+    └── app/
+        ├── main.py                 # create_app (cũng `uvicorn app.main:app`)
+        ├── core/                   # config · exceptions · logging · audit (provenance)
+        ├── db/                     # base · session · models/<entity>
+        ├── repositories/           # source · claim · entity · review_log (sync, stateless)
+        ├── schemas/                # base · claim · utterance · review (Pydantic)
+        ├── services/               # ClaimService · pipeline + thick subpackages:
+        │   ├── ingest/             #   Step 1-2: ASR, diarization, ghi substrate
+        │   ├── segment/            #   Step 3: chunking giữ offset
+        │   ├── extract/            #   Step 4: LLM + schema (Outlines/Instructor)
+        │   └── resolve/            #   Step 5-6: embedding, dedup, entity
+        ├── api/                    # router · deps (Annotated DI) · exception_handlers · routes/v1/
+        ├── worker/background/      # task nền sync (Celery/Prefect-shaped)
+        └── commands/               # CLI (argparse): audit provenance
+    └── tests/                      # Postgres-backed; tự skip nếu DB unreachable
 ```
 
-> Bố cục `backend/app/{ingest,segment,extract,resolve,store,api}` là trạng thái
-> sau Phase 0 (di chuyển cơ học). Các phase tiếp theo tách `store/` thành
-> `db/` + `repositories/`, thêm `core/`, `schemas/`, `services/` theo
-> [docs/07_2026_refactor_v1.md](docs/07_2026_refactor_v1.md).
+> Luồng request: **routes/v1 → services → repositories → db**. Chi tiết quy ước
+> ở [.claude/rules/architecture.md](.claude/rules/architecture.md); lịch sử
+> refactor ở [docs/07_2026_refactor_v1.md](docs/07_2026_refactor_v1.md).
 
 ---
 

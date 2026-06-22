@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from app.services.resolve import DeterministicEmbedder
-from app.store import EMBEDDING_DIM
+from app.db.models import EMBEDDING_DIM
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
